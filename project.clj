@@ -5,6 +5,7 @@
             :url "https://www.eclipse.org/legal/epl-2.0/"}
   :dependencies [[org.clojure/clojure "1.11.1"] 
                  [midje "1.10.10"]]
+  :plugins [[lein-midje "3.2.1"]]
   :main ^:skip-aot cryptodamus.core
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all
