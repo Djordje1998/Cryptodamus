@@ -6,7 +6,10 @@
   [& args]
   (println "Hello, World!"))
 
-(defn first-element [sequence default]
-  (if (nil? sequence)
-    default
-    (first sequence)))
+(defn predict-price [c i]
+  [])
+
+(predict-price :BTC :d)
+
+
+
