@@ -1,7 +1,9 @@
 (ns cryptodamus.core-test
-  (:require [clojure.test :refer :all]
-            [cryptodamus.core :refer :all]))
+  (:use midje.sweet) 
+  (:require [cryptodamus.core :refer :all]))
 
-(deftest a-test
-  (testing "FIXME, I fail."
-    (is (= 0 1))))
+
+(facts "`split` splits strings on regular expressions and returns a vector"
+      (str/split "a/b/c" #"/") => ["a" "b" "c"]
+      (str/split "" #"irrelevant") => [""]
+      (str/split "no regexp matches" #"a+\s+[ab]") => ["no regexp matches"])
