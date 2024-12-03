@@ -14,4 +14,4 @@ pom.xml.asc
 .lsp
 .clj-kondo
 .calva
-.env
+*.edn
