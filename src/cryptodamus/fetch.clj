@@ -15,8 +15,9 @@
                               :precision "2"}
                :accept :json}))
 
-(def btc-prices
+(defn get-coin-prices [^String c ^Integer from ^Integer to]
+  {:pre [(string? c) (integer? from) (integer? to)]}
   (:prices (json/parse-string
-            (:body (get-coin-data "bitcoin" 1704067200 1704153600)) true)))
+            (:body (get-coin-data c from to)) true)))
 
-(json/generate-string btc-prices)
+(get-coin-prices "bitcoin" 1704067200 1704153600)
