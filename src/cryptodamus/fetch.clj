@@ -3,21 +3,37 @@
             [cheshire.core :as json]
             [cryptodamus.utils :refer :all]))
 
-(def api-key-cointgecko (:coingecko (:api-keys (load-env-file "config.edn"))))
+(def api-key-cointgecko (-> "config.edn"
+                            load-env-file
+                            :api-keys
+                            :coingecko))
 
-(defn get-coin-data [^String c ^Integer from ^Integer to]
-  {:pre [(string? c) (integer? from) (integer? to)]}
-  (client/get (str "https://api.coingecko.com/api/v3/coins/" c "/market_chart/range")
-              {:headers {"x-cg-demo-api-key" api-key-cointgecko}
-               :query-params {:vs_currency "usd"
-                              :from (str from)         ;1704067200
-                              :to (str to)             ;1711843200
-                              :precision "2"}
-               :accept :json}))
 
-(defn get-coin-prices [^String c ^Integer from ^Integer to]
-  {:pre [(string? c) (integer? from) (integer? to)]}
+(defn get-chart-data
+  ([^String coin ^Integer from ^Integer to ^String precision ^String currency]
+   {:pre [(string? coin) (integer? from) (integer? to) (string? precision) (string? currency)]}
+   (client/get (str "https://api.coingecko.com/api/v3/coins/" coin "/market_chart/range")
+               {:headers {"x-cg-demo-api-key" api-key-cointgecko}
+                :query-params {:vs_currency currency
+                               :from (str from)         ;1704067200
+                               :to (str to)             ;1711843200
+                               :precision precision}
+                :accept
+                :json}))
+  ([^String coin ^Integer from ^Integer to]
+   {:pre [(string? coin) (integer? from) (integer? to)]}
+   (get-chart-data coin from to "2" "usd")))
+
+(defn get-prices-raw [^String coin ^Integer from ^Integer to]
+  {:pre [(string? coin) (integer? from) (integer? to)]}
   (:prices (json/parse-string
-            (:body (get-coin-data c from to)) true)))
+            (:body (get-chart-data coin from to)) true)))
 
-(get-coin-prices "bitcoin" 1704067200 1704153600)
+(defn get-prices [^String coin ^Integer from ^Integer to]
+  {:pre [(string? coin) (integer? from) (integer? to)]}
+  (double-array (map #(second %) (get-prices-raw coin from to))))
+
+(def price (get-prices "bitcoin" 1704067200 1704153600))
+
+(seq price)
+ 
