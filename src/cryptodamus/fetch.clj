@@ -83,7 +83,7 @@
    {:pre [(string? coin) (integer? from) (integer? to)]}
    (get-chart coin from to "2" "usd")))
 
-(defn get-price-timeline [^String coin ^Integer to ^Integer from]
+(defn get-price-timeline [^String coin ^Integer from ^Integer to]
   {:pre [(string? coin) (integer? from) (integer? to)]}
   (let [response (get-chart coin from to)]
     (or (:prices (json/parse-string (:body response) true))
@@ -94,7 +94,7 @@
   {:pre [(string? coin) (integer? from) (integer? to)]}
   (double-array (mapv second (get-price-timeline coin from to))))
 
-(def price2 (get-price "bitcoin" (utils/days-ago 1) (utils/days-ago 10)))
+(def price2 (get-price "bitcoin" (utils/days-ago 10) (utils/days-ago 1)))
 
 (seq price2)
  
