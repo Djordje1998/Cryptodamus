@@ -2,7 +2,8 @@
   (:gen-class)
   (:require [cryptodamus.fetch :as api]
             [cryptodamus.utils :as utils]
-            [cryptodamus.gui :as gui]))
+            [cryptodamus.gui :as gui]
+            [criterium.core :as criterium]))
 
 (defn -main [& args]
   (gui/show-window))
@@ -141,14 +142,14 @@
    For zero average, calculates deviations relative to maximum absolute value."
   [s]
   (when-let [avg (avg s)]
-    (cond 
-      (every? zero? s) 
+    (cond
+      (every? zero? s)
       (repeat (count s) 0.0)  ; all zeros -> return all zeros
-      
+
       (zero? avg)
       (let [max-abs (apply max (map #(Math/abs %) s))]
         (map #(* 100.0 (/ % max-abs)) s))  ; normalize relative to max absolute value
-      
+
       :else
       (map #(* 100.0 (/ (- % avg) avg)) s))))
 
@@ -205,8 +206,72 @@ s1
 
 (predict-pattern btc-last-day2)
 
-; "User want to get future price of given currency base on specific interval"
-(defn predict-price [price-chart]
-  (predict-pattern price-chart))
+(defn predict-price
+  "Predicts future prices based on historical patterns.
+   Returns top n predicted price sequences sorted by pattern match score."
+  [price-chart n]
+  (when-let [patterns (predict-pattern price-chart)]
+    (let [last-price (double (last price-chart))
+          sorted-patterns (sort-by :score > patterns)
+          top-patterns (take n sorted-patterns)
+          predictions (map (fn [{:keys [outcome]}]
+                             (mapv (fn [pct]
+                                     (* last-price (+ 100.0 pct) 0.01))
+                                   outcome))
+                           top-patterns)]
+      (println "last-price" last-price)
+      (println "sorted-patterns" sorted-patterns)
+      (println "top-patterns" top-patterns)
+      (println "predictions" predictions)
+      {:predictions predictions
+       :scores (mapv :score top-patterns)})))
 
-(predict-price btc-last-day)
+(predict-price btc-last-day2 5)
+
+
+
+; EVALUATE PREDICTION
+
+
+(defn split-last-n
+  "Splits a primitive double array into two double arrays."
+  [^long x ^doubles arr]
+  (let [n (alength arr)
+        split-index (- n x)]
+    [(java.util.Arrays/copyOfRange arr 0 split-index)
+     (java.util.Arrays/copyOfRange arr split-index n)]))
+
+(def test-array (double-array (range 1000000)))
+(criterium/with-progress-reporting (criterium/quick-bench (split-last-n 200 test-array))) ; 1,458845 ms
+
+(def train-data (get (split-last-n 5 (double-array btc-last-day2)) 0))
+train-data
+
+(def test-data (get (split-last-n 5 (double-array btc-last-day2)) 1))
+test-data
+
+
+(predict-price train-data 5)
+test-data
+
+
+
+(defn evaluate-prediction
+  "Evaluates prediction accuracy against test data."
+  [predictions test-data & {:keys [tolerance] :or {tolerance 5.0}}]
+  (when (and (seq predictions) (seq test-data))
+    (let [diffs (abs-dif predictions test-data)
+          mean-error (double (/ (apply + diffs) (count diffs)))
+          max-error (apply max diffs)
+          within-tolerance (count (filter #(<= % tolerance) diffs))
+          accuracy-pct (* 100.0 (/ within-tolerance (count diffs)))]
+      {:mean-error mean-error
+       :max-error max-error
+       :within-tolerance within-tolerance
+       :total-points (count diffs)
+       :accuracy-pct accuracy-pct
+       :differences diffs})))
+
+(evaluate-prediction (first (:predictions (predict-price train-data 5))) test-data)
+
+

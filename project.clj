@@ -9,7 +9,8 @@
                  [cheshire "5.13.0"]
                  [seesaw "1.5.0"]
                  [org.jfree/jfreechart "1.5.3"]
-                 [com.toedter/jcalendar "1.4"]]
+                 [com.toedter/jcalendar "1.4"]
+                 [criterium "0.4.6"]]
   :plugins [[lein-midje "3.2.1"]]
   :main cryptodamus.core
   :target-path "target/%s"
