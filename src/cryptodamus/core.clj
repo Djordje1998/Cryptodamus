@@ -10,13 +10,12 @@
 (def btc-last-day2 (api/get-price "bitcoin" (utils/days-ago 20) (utils/days-ago 1)))
 (def btc-last-day (vec (range 20)))
 
-; vraca procentualnu razliku izmedju 1 i 2 s1 i s2
 (defn dif
-  "Returns element-wise differences between two equal-length numeric sequences.
+  "Returns element-wise differences between two equal length numeric sequences.
    Throws IllegalArgumentException if sequences have different lengths."
   [s1 s2]
   (if (= (count s1) (count s2))
-    (map - s1 s2)
+    (map - s2 s1)
     (throw (IllegalArgumentException. "Sequences must be of the same length"))))
 
 (dif [1 2 3] [4 1 6])
@@ -31,21 +30,19 @@
 
 (abs-dif [1 2 3] [4 1 6])
 
-; proverava da li je procentualna razlika uvek vece od x (minimalni stepen slicnosti)
-(def x 10)
-; unaprediti tako da dopusti da par elemenata nije u opsegu a opet prodje, miss-number and miss-amount
 (defn all-below-limit?
   "Checks if non-empty sequence contains only elements with absolute values <= limit.
    Returns false for empty sequences."
   [s l]
-  (and (seq s)
-       (every? #(<= (Math/abs %) l) s)))
+  (if (seq s)
+    (every? #(<= (Math/abs (double %)) (double l)) s)
+    false))
 
+(def x 10)
 (all-below-limit? [80 61 80 100 90] x)
 (all-below-limit? [1 2 3 4 9 10] x)
 (all-below-limit? [] x)
 
-; average of elements in array
 (defn avg
   "Calculates the arithmetic mean in a single pass. Returns nil for empty collections."
   [s]
@@ -55,8 +52,6 @@
 
 (avg [1 2 3 4 5 6])
 (avg [])
-
-; round number to precision
 
 (def ^:private common-scales
   "Precomputed scales for common precisions [1e0, 1e1, ..., 1e18]"
@@ -77,8 +72,8 @@
 ; round items of array to precision
 (defn round
   "Rounds each element in collection to specified precision."
-  [precision a]
-  (map (partial round-to precision) a))
+  [precision s]
+  (map (partial round-to precision) s))
 
 (round 3 [2.12313 5.51241 6.5111 10.5231 2.556])
 
@@ -87,8 +82,8 @@
   "Anchors the starting point to zero by subtracting the first price from all prices."
   [prices]
   (when (seq prices)
-    (let [base (first prices)]
-      (map #(- % base) prices))))
+    (let [base (double (first prices))]
+      (map #(double (- % base)) prices))))
 
 (zero-anchoring [1 2 3])
 (zero-anchoring [4 5 6])
@@ -109,6 +104,7 @@
 (relative-percent-change [7 8 9])
 (relative-percent-change [10 11 12])
 
+; not tested
 (defn percentage-change [prices]
   (when (> (count prices) 1)
     (map #(* 100 (/ (- %2 %1) %1))
@@ -120,6 +116,7 @@
 (percentage-change [4 5 6])
 (percentage-change [10 11 12])
 
+; not tested
 (defn price-differences [prices]
   (map - (rest prices) prices))
 
@@ -128,6 +125,7 @@
 (price-differences [7 8 9])
 (price-differences [10 11 12])
 
+; not tested
 (defn log-returns [prices]
   (map #(Math/log (/ %2 %1))
        prices
@@ -138,20 +136,27 @@
 (log-returns [4 5 6])
 (log-returns [10 11 12])
 
-; array of difference in % from avg
 (defn delta-avg
   "Calculates percentage deviation from average. Returns nil for empty collections.
-   Throws ArithmeticException when average is zero."
+   For zero average, calculates deviations relative to maximum absolute value."
   [s]
   (when-let [avg (avg s)]
-    (when (zero? avg)
-      (throw (ArithmeticException. "Cannot calculate delta-avg with zero average")))
-    (map #(* 100.0 (/ (- % avg) avg)) s)))
+    (cond 
+      (every? zero? s) 
+      (repeat (count s) 0.0)  ; all zeros -> return all zeros
+      
+      (zero? avg)
+      (let [max-abs (apply max (map #(Math/abs %) s))]
+        (map #(* 100.0 (/ % max-abs)) s))  ; normalize relative to max absolute value
+      
+      :else
+      (map #(* 100.0 (/ (- % avg) avg)) s))))
 
 (delta-avg [])
-(delta-avg [0 0 0])
 (delta-avg [25 30 30])
 (delta-avg [30 30 30])
+(delta-avg [0 0 0])
+(delta-avg [-1 0 1])
 
 (dif (delta-avg [25 30 30]) (delta-avg [30 30 30]))
 (all-below-limit? (dif (delta-avg [25 30 30]) (delta-avg [30 30 30])) x)
