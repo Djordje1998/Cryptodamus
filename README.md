@@ -1,10 +1,29 @@
-# cryptodamus
+# Cryptodamus
 
-FIXME: description
+A cryptocurrency price prediction tool that uses pattern recognition in historical price data to forecast future price movements.
 
-## Installation
+## Overview
 
-Download from http://example.com/FIXME.
+Cryptodamus analyzes historical price patterns to identify similar trends that might predict future price movements. Named after Nostradamus, it attempts to see the future through patterns of the past.
+
+## Core Concepts
+
+The prediction engine works through several key steps:
+
+1. **Pattern Analysis**
+   - Calculates percentage deviations from moving averages
+   - Identifies similar patterns using delta analysis
+   - Scores pattern matches based on similarity
+
+2. **Price Prediction**
+   - Ranks historical patterns by match quality
+   - Projects future prices using percentage changes
+   - Returns multiple possible price trajectories
+
+3. **Accuracy Evaluation**
+   - Measures prediction accuracy against actual prices
+   - Calculates mean and maximum errors
+   - Reports accuracy within specified tolerance
 
 ## Usage
 
