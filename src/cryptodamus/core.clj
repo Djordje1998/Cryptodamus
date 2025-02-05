@@ -165,6 +165,7 @@
 
 (def cw 5) ; chunk-window
 (def sw 5) ; skip-window
+(def pw 5) ; predict-window
 (def sig 1) ; significance
 
 (def s1 (partition cw sw (range 100)))
@@ -176,7 +177,7 @@ s1
 (first s1)
 (rest s1)
 ; "Find pattern in past data and return expected pattern"
-(defn predict-pattern [chart-data]
+(defn predict-pattern [chart-data cw sw sig]
   (loop [c1 (take-last cw chart-data)
          s (partition cw sw chart-data)
          i 0
@@ -204,13 +205,13 @@ s1
           (println "End!")
           r)))))
 
-(predict-pattern btc-last-day2)
+(predict-pattern btc-last-day2 cw sw sig)
 
 (defn predict-price
   "Predicts future prices based on historical patterns.
    Returns top n predicted price sequences sorted by pattern match score."
-  [price-chart n]
-  (when-let [patterns (predict-pattern price-chart)]
+  [price-chart n cw sw sig]
+  (when-let [patterns (predict-pattern price-chart cw sw sig)]
     (let [last-price (double (last price-chart))
           sorted-patterns (sort-by :score > patterns)
           top-patterns (take n sorted-patterns)
@@ -226,7 +227,7 @@ s1
       {:predictions predictions
        :scores (mapv :score top-patterns)})))
 
-(predict-price btc-last-day2 5)
+(predict-price btc-last-day2 pw cw sw sig)
 
 
 
@@ -244,14 +245,14 @@ s1
 (def test-array (double-array (range 1000000)))
 (criterium/with-progress-reporting (criterium/quick-bench (split-last-n 200 test-array))) ; 1,458845 ms
 
-(def train-data (get (split-last-n 5 (double-array btc-last-day2)) 0))
+(def train-data (get (split-last-n pw (double-array btc-last-day2)) 0))
 train-data
 
-(def test-data (get (split-last-n 5 (double-array btc-last-day2)) 1))
+(def test-data (get (split-last-n pw (double-array btc-last-day2)) 1))
 test-data
 
 
-(predict-price train-data 5)
+(predict-price train-data pw cw sw sig)
 test-data
 
 
@@ -272,6 +273,37 @@ test-data
        :accuracy-pct accuracy-pct
        :differences diffs})))
 
-(evaluate-prediction (first (:predictions (predict-price train-data 5))) test-data)
+(evaluate-prediction (first (:predictions (predict-price train-data pw cw sw sig))) test-data)
 
+(defn optimize-config
+  "Tests different configurations and returns map of configs sorted by prediction accuracy.
+   Uses same window size for both pattern matching and prediction."
+  [price-data {:keys [cw-range sw-range sig-range]}]
+  (let [configs (for [cw cw-range
+                      sw sw-range
+                      sig sig-range]
+                  {:cw cw :sw sw :sig sig})
+        evaluate-config (fn [config]
+                          (let [window-size (:cw config)  ; use same size for both
+                                [train test] (split-last-n window-size (double-array price-data))
+                                prediction-result (predict-price train
+                                                                 window-size  ; prediction window
+                                                                 window-size  ; chunk window
+                                                                 (:sw config)
+                                                                 (:sig config))
+                                first-prediction (first (:predictions prediction-result))
+                                evaluation (evaluate-prediction first-prediction test)]
+                            (assoc config
+                                   :score (:accuracy-pct evaluation)
+                                   :mean-error (:mean-error evaluation))))
+        evaluated-configs (map evaluate-config configs)
+        sorted-configs (sort-by :score > evaluated-configs)]
+    (println "Testing configs with window sizes:" (vec cw-range))
+    (take 10 sorted-configs)))
 
+(def config-ranges
+  {:cw-range (range 3 8)    ; window size for both pattern and prediction
+   :sw-range (range 3 8)    ; skip-window 
+   :sig-range [0.5 1.0 1.5]})  ; significance
+
+(optimize-config btc-last-day2 config-ranges)
