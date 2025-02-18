@@ -96,9 +96,7 @@
   [s]
   (when-let [f (first s)]
     (let [base (double f)]
-      (map (fn [e]
-             (double (* 100.0 (/ (- (double e) base) base))))
-           s))))
+      (map (fn [e] (double (* 100.0 (/ (- (double e) base) base)))) s))))
 
 (relative-percent-change [99143.84 99644.38 81486.58 101584.41 101728.83])
 (relative-percent-change [4 5 6])
@@ -176,26 +174,46 @@ s1
 (count s1)
 (first s1)
 (rest s1)
+
+
+
 ; "Find pattern in past data and return expected pattern"
+(defn calculate-pattern-score
+  "Calculate pattern matching score based on differences and significance threshold.
+   Returns a score between 0-100, where 100 means perfect match and 0 means poor match.
+   Parameters:
+   - delta-diff: sequence of differences between patterns
+   - sig: significance threshold
+   - cw: chunk window size"
+  [delta-diff sig cw]
+  (let [normalized-diffs (map #(/ (Math/abs %) sig) delta-diff)
+        max-diff (apply max normalized-diffs)
+        sum-diffs (apply + normalized-diffs)]
+    (* 100.0 (Math/exp (- (+ (* sig 3.0 max-diff) 
+                            (/ sum-diffs cw)))))))
+
 (defn predict-pattern [chart-data cw sw sig]
   (loop [c1 (take-last cw chart-data)
          s (partition cw sw chart-data)
          i 0
          r []]
     (let [first-seq (first s)
-          second-seq (second s) ; staviti u r 
-          delta-diff (abs-dif (delta-avg first-seq) (delta-avg c1))]
+          second-seq (second s)
+          delta-diff (dif (delta-avg first-seq) (delta-avg c1))]
       (if (seq (rest s))
         (recur c1 (rest s) (inc i)
                (if (all-below-limit? delta-diff sig)
                  (do
                    (println "==>" i ". Good")
+                   (println "c1 " c1)
+                   (println "delta-avg c1 " (delta-avg c1))
                    (println "first " first-seq)
+                   (println "delta-avg first " (delta-avg first-seq))
                    (println "delta-diff " delta-diff)
-                   (into r [{:score (- 100 (* 100 (/ (/ (apply + delta-diff) cw) sig)))
-                             :match first-seq
-                             :base (first first-seq)
-                             :outcome (round 5 (relative-percent-change second-seq))}]))
+                   (into r [{:score (calculate-pattern-score delta-diff sig cw)
+                            :match first-seq
+                            :base (first first-seq)
+                            :outcome (round 5 (relative-percent-change second-seq))}]))
                  (do
                    (println "==>" i ". Bad")
                    (println "first " first-seq)
@@ -206,6 +224,23 @@ s1
           r)))))
 
 (predict-pattern btc-last-day2 cw sw sig)
+
+(defn sort-patterns-by-score
+  "Sorts pattern matches by score in descending order."
+  [patterns]
+  (sort-by :score > patterns))
+
+(sort-patterns-by-score (predict-pattern btc-last-day2 cw sw sig))
+
+(defn print-sorted-patterns
+  "Prints pattern matches sorted by score in a readable format."
+  [patterns]
+  (doseq [{:keys [score match outcome]} (sort-patterns-by-score patterns)]
+    (println "\nScore:" (round-to 2 score))
+    (println "Pattern:" (vec match))
+    (println "Expected outcome:" (vec outcome))))
+
+(print-sorted-patterns (predict-pattern btc-last-day2 cw sw sig))
 
 (defn predict-price
   "Predicts future prices based on historical patterns.

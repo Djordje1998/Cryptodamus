@@ -147,3 +147,44 @@
         (fact "handles zero average cases"
               (core/delta-avg [0 0 0]) => [0.0 0.0 0.0]
               (core/delta-avg [-1 0 1]) => (roughly-coll [-100.0 0.0 100.0])))
+
+ (facts "about Math/exp behavior"
+        (fact "exp with zero and negative numbers"
+              (Math/exp 0) => 1.0
+              (Math/exp -0) => 1.0
+              (Math/exp -1) => (roughly 0.367879441171442 1e-10)
+              (Math/exp 1) => (roughly 2.718281828459045 1e-10)
+              (Math/exp -2) => (roughly 0.135335283236613 1e-10)))
+
+ (facts "about calculate-pattern-score function"
+        (let [cw 5  ; chunk window size
+              sig 1.0]  ; significance threshold
+          
+          (fact "perfect match should score 100"
+                (core/calculate-pattern-score [0 0 0 0 0] 1.0 5) => (roughly 100.0 0.1))
+          
+          (fact "small differences should score around 65-70"
+                (core/calculate-pattern-score [0.1 0.1 0.1 0.1 0.1] 1.0 5) => (roughly 67.0 1.0))
+          
+          (fact "moderate differences should score around 40-45"
+                (core/calculate-pattern-score [0.5 0.5 0.5 0.5 0.5] 1.0 5) => (roughly 13 1.0))
+          
+          (fact "large differences should score around 20-25"
+                (core/calculate-pattern-score [0.8 0.8 0.8 0.8 0.8] 1.0 5) => (roughly 4 1.0))
+          
+          (fact "differences near significance threshold should score around 15"
+                (core/calculate-pattern-score [0.95 0.95 0.95 0.95 0.95] 1.0 5) => (roughly 2 1.0))
+          
+          (fact "scores should be sensitive to individual spikes"
+                (let [mostly-good [0.1 0.1 0.9 0.1 0.1]
+                      all-moderate [0.5 0.5 0.5 0.5 0.5]]
+                  (core/calculate-pattern-score mostly-good sig cw) => 
+                  (roughly 5.0 1.0)  ; Lower score due to the spike
+                  (core/calculate-pattern-score all-moderate sig cw) =>
+                  (roughly 13.0 1.0))) ; Better score with consistent moderate differences
+          
+          (fact "scoring should scale with significance"
+                (let [diffs [0.5 0.5 0.5 0.5 0.5]]
+                  (core/calculate-pattern-score diffs 5.0 cw) => (roughly 20.0 1.0)
+                  (core/calculate-pattern-score diffs 1.0 cw) => (roughly 13.5 1.0)
+                  (core/calculate-pattern-score diffs 0.1 cw) => (roughly 0.0 1.0)))))
