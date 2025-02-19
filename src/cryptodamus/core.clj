@@ -244,15 +244,20 @@ s1
 
 (defn predict-price
   "Predicts future prices based on historical patterns.
-   Returns top n predicted price sequences sorted by pattern match score."
+   Returns top n predicted price sequences sorted by pattern match score.
+   Parameters:
+   - price-chart: sequence of historical prices
+   - n: number of top predicted price to take in count
+   - cw: chunk window size
+   - sw: skip window size
+   - sig: significance threshold"
   [price-chart n cw sw sig]
   (when-let [patterns (predict-pattern price-chart cw sw sig)]
     (let [last-price (double (last price-chart))
-          sorted-patterns (sort-by :score > patterns)
+          sorted-patterns (sort-patterns-by-score patterns)
           top-patterns (take n sorted-patterns)
           predictions (map (fn [{:keys [outcome]}]
-                             (mapv (fn [pct]
-                                     (* last-price (+ 100.0 pct) 0.01))
+                             (mapv (fn [pct] (* last-price (+ 100.0 pct) 0.01))
                                    outcome))
                            top-patterns)]
       (println "last-price" last-price)
@@ -270,7 +275,10 @@ s1
 
 
 (defn split-last-n
-  "Splits a primitive double array into two double arrays."
+  "Splits a primitive double array into two double arrays.
+  Parameters:
+  - x: number of elements to split from the end
+  - arr: primitive double array to split"
   [^long x ^doubles arr]
   (let [n (alength arr)
         split-index (- n x)]
@@ -278,7 +286,7 @@ s1
      (java.util.Arrays/copyOfRange arr split-index n)]))
 
 (def test-array (double-array (range 1000000)))
-(criterium/with-progress-reporting (criterium/quick-bench (split-last-n 200 test-array))) ; 1,458845 ms
+;; (criterium/with-progress-reporting (criterium/quick-bench (split-last-n 200 test-array))) ; 1,458845 ms
 
 (def train-data (get (split-last-n pw (double-array btc-last-day2)) 0))
 train-data
@@ -286,29 +294,57 @@ train-data
 (def test-data (get (split-last-n pw (double-array btc-last-day2)) 1))
 test-data
 
-
 (predict-price train-data pw cw sw sig)
 test-data
 
 
+;; (defn evaluate-single-prediction
+;;   "Evaluates a single prediction sequence against test data.
+   
+;;    Parameters:
+;;    - prediction: sequence of predicted prices
+;;    - test-data: actual price sequence to compare against
+;;    - tolerance: maximum acceptable difference percentage (default 5.0)"
+;;   [prediction test-data & {:keys [tolerance] :or {tolerance 5.0}}]
+;;   (when (and (seq prediction) (seq test-data))
+;;     (let [diffs (dif prediction test-data)
+;;           mean-error (double (/ (apply + diffs) (count diffs)))
+;;           max-error (apply max diffs)
+;;           within-tolerance (count (filter #(<= % tolerance) diffs))
+;;           accuracy-pct (* 100.0 (/ within-tolerance (count diffs)))]
+;;       {:mean-error mean-error
+;;        :max-error max-error
+;;        :within-tolerance within-tolerance
+;;        :total-points (count diffs)
+;;        :accuracy-pct accuracy-pct
+;;        :differences diffs})))
 
-(defn evaluate-prediction
-  "Evaluates prediction accuracy against test data."
+(defn evaluate-predictions
+  "Evaluates multiple prediction sequences against test data.
+   Returns a single statistical summary combining all predictions.
+   
+   Parameters:
+   - predictions: sequence of prediction sequences to evaluate
+   - test-data: actual price sequence to compare against
+   - tolerance: maximum acceptable difference percentage (default 5.0)"
   [predictions test-data & {:keys [tolerance] :or {tolerance 5.0}}]
   (when (and (seq predictions) (seq test-data))
-    (let [diffs (abs-dif predictions test-data)
-          mean-error (double (/ (apply + diffs) (count diffs)))
-          max-error (apply max diffs)
-          within-tolerance (count (filter #(<= % tolerance) diffs))
-          accuracy-pct (* 100.0 (/ within-tolerance (count diffs)))]
-      {:mean-error mean-error
+    (let [all-diffs (mapcat #(dif % test-data) predictions)
+          total-points (count all-diffs)
+          mean-error (double (/ (apply + all-diffs) total-points))
+          max-error (apply max all-diffs)
+          within-tolerance (count (filter #(<= % tolerance) all-diffs))
+          accuracy-pct (* 100.0 (/ within-tolerance total-points))]
+      {:all-diffs all-diffs
+       :mean-error mean-error
        :max-error max-error
        :within-tolerance within-tolerance
-       :total-points (count diffs)
+       :total-points total-points
        :accuracy-pct accuracy-pct
-       :differences diffs})))
+       :num-predictions (count predictions)})))
 
-(evaluate-prediction (first (:predictions (predict-price train-data pw cw sw sig))) test-data)
+(def predictions (predict-price train-data pw cw sw sig))
+(evaluate-predictions (:predictions predictions) test-data)
 
 (defn optimize-config
   "Tests different configurations and returns map of configs sorted by prediction accuracy.
@@ -319,18 +355,17 @@ test-data
                       sig sig-range]
                   {:cw cw :sw sw :sig sig})
         evaluate-config (fn [config]
-                          (let [window-size (:cw config)  ; use same size for both
-                                [train test] (split-last-n window-size (double-array price-data))
-                                prediction-result (predict-price train
-                                                                 window-size  ; prediction window
-                                                                 window-size  ; chunk window
-                                                                 (:sw config)
-                                                                 (:sig config))
-                                first-prediction (first (:predictions prediction-result))
-                                evaluation (evaluate-prediction first-prediction test)]
-                            (assoc config
-                                   :score (:accuracy-pct evaluation)
-                                   :mean-error (:mean-error evaluation))))
+                         (let [window-size (:cw config)  ; use same size for both
+                               [train test] (split-last-n window-size (double-array price-data))
+                               prediction-result (predict-price train
+                                                              window-size  ; prediction window
+                                                              window-size  ; chunk window
+                                                              (:sw config)
+                                                              (:sig config))
+                               evaluation (evaluate-predictions (:predictions prediction-result) test)]
+                           (assoc config
+                                  :score (:accuracy-pct evaluation)
+                                  :mean-error (:mean-error evaluation))))
         evaluated-configs (map evaluate-config configs)
         sorted-configs (sort-by :score > evaluated-configs)]
     (println "Testing configs with window sizes:" (vec cw-range))
