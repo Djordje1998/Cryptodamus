@@ -26,7 +26,7 @@
    Throws IllegalArgumentException if sequences have different lengths."
   [s1 s2]
   (if (= (count s1) (count s2))
-    (map #(Math/abs (- %1 %2)) s1 s2)
+    (map #(Math/abs (- %2 %1)) s1 s2)
     (throw (IllegalArgumentException. "Sequences must be of the same length"))))
 
 (abs-dif [1 2 3] [4 1 6])
@@ -177,7 +177,6 @@ s1
 
 
 
-; "Find pattern in past data and return expected pattern"
 (defn calculate-pattern-score
   "Calculate pattern matching score based on differences and significance threshold.
    Returns a score between 0-100, where 100 means perfect match and 0 means poor match.
@@ -192,6 +191,7 @@ s1
     (* 100.0 (Math/exp (- (+ (* sig 3.0 max-diff) 
                             (/ sum-diffs cw)))))))
 
+; "Find pattern in past data and return expected pattern"
 (defn predict-pattern [chart-data cw sw sig]
   (loop [c1 (take-last cw chart-data)
          s (partition cw sw chart-data)
@@ -297,28 +297,6 @@ test-data
 (predict-price train-data pw cw sw sig)
 test-data
 
-
-;; (defn evaluate-single-prediction
-;;   "Evaluates a single prediction sequence against test data.
-   
-;;    Parameters:
-;;    - prediction: sequence of predicted prices
-;;    - test-data: actual price sequence to compare against
-;;    - tolerance: maximum acceptable difference percentage (default 5.0)"
-;;   [prediction test-data & {:keys [tolerance] :or {tolerance 5.0}}]
-;;   (when (and (seq prediction) (seq test-data))
-;;     (let [diffs (dif prediction test-data)
-;;           mean-error (double (/ (apply + diffs) (count diffs)))
-;;           max-error (apply max diffs)
-;;           within-tolerance (count (filter #(<= % tolerance) diffs))
-;;           accuracy-pct (* 100.0 (/ within-tolerance (count diffs)))]
-;;       {:mean-error mean-error
-;;        :max-error max-error
-;;        :within-tolerance within-tolerance
-;;        :total-points (count diffs)
-;;        :accuracy-pct accuracy-pct
-;;        :differences diffs})))
-
 (defn evaluate-predictions
   "Evaluates multiple prediction sequences against test data.
    Returns a single statistical summary combining all predictions.
@@ -329,7 +307,7 @@ test-data
    - tolerance: maximum acceptable difference percentage (default 5.0)"
   [predictions test-data & {:keys [tolerance] :or {tolerance 5.0}}]
   (when (and (seq predictions) (seq test-data))
-    (let [all-diffs (mapcat #(dif % test-data) predictions)
+    (let [all-diffs (mapcat #(abs-dif % test-data) predictions)
           total-points (count all-diffs)
           mean-error (double (/ (apply + all-diffs) total-points))
           max-error (apply max all-diffs)
