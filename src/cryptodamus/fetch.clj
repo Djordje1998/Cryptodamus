@@ -94,7 +94,6 @@
   {:pre [(string? coin) (integer? from) (integer? to)]}
   (double-array (mapv second (get-price-timeline coin from to))))
 
-(def price2 (get-price "bitcoin" (utils/days-ago 10) (utils/days-ago 1)))
-
-(seq price2)
+;; (def price2 (get-price "bitcoin" (utils/days-ago 10) (utils/days-ago 1)))
+;; (seq price2)
  

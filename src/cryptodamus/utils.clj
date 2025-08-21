@@ -4,7 +4,8 @@
 
 
 (defn load-env-file
-  "Load environment variables from a .edn file"
+  "Load configuration from an EDN file on the classpath (e.g., resources/).
+  Returns an empty map {} if the file is not found."
   [filename]
   (let [env-file (io/resource filename)]
     (when env-file

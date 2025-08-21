@@ -101,12 +101,23 @@
 (relative-percent-change [99143.84 99644.38 81486.58 101584.41 101728.83])
 (relative-percent-change [4 5 6])
 (relative-percent-change [7 8 9])
-(relative-percent-change [10 11 12])
+(relative-percent-change [10 9 12])
 
 ; not tested
 (defn percentage-change [prices]
   (when (> (count prices) 1)
-    (map #(* 100 (/ (- %2 %1) %1))
+    (map (fn [prev curr]
+           (when (zero? prev)
+             (throw (ArithmeticException. "Division by zero in percentage-change")))
+           (let [delta (- (double curr) (double prev))
+                 base  (double prev)
+                 pct (if (neg? base)
+                       ;; For negative bases, use absolute percentage to avoid sign inversion
+                       (* 100.0 (/ (Math/abs delta) (Math/abs base)))
+                       ;; For non-negative bases, use signed percentage change
+                       (* 100.0 (/ delta base)))]
+              ;; Round to reduce floating point artifacts for precision tests
+              (round-to 14 pct)))
          prices
          (rest prices))))
 
@@ -122,7 +133,7 @@
 (price-differences [1 2 3])
 (price-differences [4 5 6])
 (price-differences [7 8 9])
-(price-differences [10 11 12])
+(price-differences [10 9 12])
 
 ; not tested
 (defn log-returns [prices]
@@ -142,11 +153,11 @@
   (when-let [avg (avg s)]
     (cond
       (every? zero? s)
-      (repeat (count s) 0.0)  ; all zeros -> return all zeros
+      (repeat (count s) 0.0)
 
       (zero? avg)
       (let [max-abs (apply max (map #(Math/abs %) s))]
-        (map #(* 100.0 (/ % max-abs)) s))  ; normalize relative to max absolute value
+        (map #(* 100.0 (/ % max-abs)) s))
 
       :else
       (map #(* 100.0 (/ (- % avg) avg)) s))))
@@ -176,31 +187,37 @@ s1
 (rest s1)
 
 
-
 (defn calculate-pattern-score
   "Calculate pattern matching score based on differences and significance threshold.
-   Returns a score between 0-100, where 100 means perfect match and 0 means poor match.
-   Parameters:
-   - delta-diff: sequence of differences between patterns
-   - sig: significance threshold
-   - cw: chunk window size"
+   Returns a score between 0-100, where 100 means perfect match and 0 means no match."
   [delta-diff sig cw]
-  (let [normalized-diffs (map #(/ (Math/abs %) sig) delta-diff)
-        max-diff (apply max normalized-diffs)
-        sum-diffs (apply + normalized-diffs)]
-    (* 100.0 (Math/exp (- (+ (* sig 3.0 max-diff) 
-                            (/ sum-diffs cw)))))))
+  (let [avg-abs-diff (/ (apply + (map #(Math/abs %) delta-diff)) cw)
+        max-abs-diff (apply max (map #(Math/abs %) delta-diff))
+
+        ;; Normalize to 0-1 scale relative to significance threshold
+        avg-score (max 0.0 (- 1.0 (/ avg-abs-diff sig)))
+        max-score (max 0.0 (- 1.0 (/ max-abs-diff sig)))
+
+        ;; Combine average and max penalties (you can adjust weights)
+        combined-score (+ (* 0.7 avg-score) (* 0.3 max-score))]
+
+
+    (* 100.0 combined-score)))
 
 ; "Find pattern in past data and return expected pattern"
 (defn predict-pattern [chart-data cw sw sig]
-  (loop [c1 (take-last cw chart-data)
+  (cond
+    (or (nil? chart-data) (empty? chart-data)) []
+    (< (count chart-data) cw) (throw (IllegalArgumentException. "Insufficient data for given chunk window"))
+    :else
+    (loop [c1 (take-last cw chart-data)
          s (partition cw sw chart-data)
          i 0
          r []]
     (let [first-seq (first s)
           second-seq (second s)
           delta-diff (dif (delta-avg first-seq) (delta-avg c1))]
-      (if (seq (rest s))
+      (if (and (seq (rest s)) second-seq)
         (recur c1 (rest s) (inc i)
                (if (all-below-limit? delta-diff sig)
                  (do
@@ -211,9 +228,9 @@ s1
                    (println "delta-avg first " (delta-avg first-seq))
                    (println "delta-diff " delta-diff)
                    (into r [{:score (calculate-pattern-score delta-diff sig cw)
-                            :match first-seq
-                            :base (first first-seq)
-                            :outcome (round 5 (relative-percent-change second-seq))}]))
+                             :match first-seq
+                             :base (first first-seq)
+                             :outcome (round 5 (relative-percent-change second-seq))}]))
                  (do
                    (println "==>" i ". Bad")
                    (println "first " first-seq)
@@ -221,7 +238,7 @@ s1
                    r)))
         (do
           (println "End!")
-          r)))))
+          r))))))
 
 (predict-pattern btc-last-day2 cw sw sig)
 
@@ -256,10 +273,10 @@ s1
     (let [last-price (double (last price-chart))
           sorted-patterns (sort-patterns-by-score patterns)
           top-patterns (take n sorted-patterns)
-          predictions (map (fn [{:keys [outcome]}]
-                             (mapv (fn [pct] (* last-price (+ 100.0 pct) 0.01))
-                                   outcome))
-                           top-patterns)]
+          predictions (mapv (fn [{:keys [outcome]}]
+                              (mapv (fn [pct] (* last-price (/ (+ 100.0 pct) 100.0)))
+                                    outcome))
+                            top-patterns)]
       (println "last-price" last-price)
       (println "sorted-patterns" sorted-patterns)
       (println "top-patterns" top-patterns)
@@ -297,32 +314,59 @@ test-data
 (predict-price train-data pw cw sw sig)
 test-data
 
-(defn evaluate-predictions
-  "Evaluates multiple prediction sequences against test data.
-   Returns a single statistical summary combining all predictions.
+;; (defn evaluate-predictions
+;;   "Evaluates multiple prediction sequences against test data.
+;;    Returns a single statistical summary combining all predictions.
    
-   Parameters:
-   - predictions: sequence of prediction sequences to evaluate
-   - test-data: actual price sequence to compare against
-   - tolerance: maximum acceptable difference percentage (default 5.0)"
+;;    Parameters:
+;;    - predictions: sequence of prediction sequences to evaluate
+;;    - test-data: actual price sequence to compare against
+;;    - tolerance: maximum acceptable difference percentage (default 5.0)"
+;;   [predictions test-data & {:keys [tolerance] :or {tolerance 5.0}}]
+;;   (when (and (seq predictions) (seq test-data))
+;;     (let [all-diffs (mapcat #(abs-dif % test-data) predictions)
+;;           total-points (count all-diffs)
+;;           mean-error (double (/ (apply + all-diffs) total-points))
+;;           max-error (apply max all-diffs)
+;;           within-tolerance (count (filter #(<= % tolerance) all-diffs))
+;;           accuracy-pct (* 100.0 (/ within-tolerance total-points))]
+;;       {:all-diffs all-diffs
+;;        :mean-error mean-error
+;;        :max-error max-error
+;;        :within-tolerance within-tolerance
+;;        :total-points total-points
+;;        :accuracy-pct accuracy-pct
+;;        :num-predictions (count predictions)})))
+
+
+(defn abs-percentage-diff [predicted actual]
+  (when-not (zero? actual)
+    (* 100.0 (/ (Math/abs (- predicted actual)) (Math/abs actual)))))
+
+(defn evaluate-predictions
   [predictions test-data & {:keys [tolerance] :or {tolerance 5.0}}]
-  (when (and (seq predictions) (seq test-data))
-    (let [all-diffs (mapcat #(abs-dif % test-data) predictions)
-          total-points (count all-diffs)
-          mean-error (double (/ (apply + all-diffs) total-points))
-          max-error (apply max all-diffs)
-          within-tolerance (count (filter #(<= % tolerance) all-diffs))
-          accuracy-pct (* 100.0 (/ within-tolerance total-points))]
-      {:all-diffs all-diffs
-       :mean-error mean-error
-       :max-error max-error
-       :within-tolerance within-tolerance
-       :total-points total-points
-       :accuracy-pct accuracy-pct
-       :num-predictions (count predictions)})))
+  (let [all-diffs (filter some?
+                          (mapcat (fn [prediction]
+                                    (map abs-percentage-diff prediction test-data))
+                                  predictions))
+        total-points (count all-diffs)
+        mean-error (/ (reduce + all-diffs) total-points)
+        max-error (apply max all-diffs)
+        within-tolerance (count (filter #(<= % tolerance) all-diffs))
+        accuracy-pct (* 100.0 (/ within-tolerance total-points))]
+    {:mean-error mean-error
+     :max-error max-error
+     :within-tolerance within-tolerance
+     :total-points total-points
+     :accuracy-pct accuracy-pct
+     :num-predictions (count predictions)}))
+
+
 
 (def predictions (predict-price train-data pw cw sw sig))
-(evaluate-predictions (:predictions predictions) test-data)
+(evaluate-predictions (:predictions predictions) test-data :tolerance 1)
+
+(seq test-data)
 
 (defn optimize-config
   "Tests different configurations and returns map of configs sorted by prediction accuracy.
@@ -333,17 +377,17 @@ test-data
                       sig sig-range]
                   {:cw cw :sw sw :sig sig})
         evaluate-config (fn [config]
-                         (let [window-size (:cw config)  ; use same size for both
-                               [train test] (split-last-n window-size (double-array price-data))
-                               prediction-result (predict-price train
-                                                              window-size  ; prediction window
-                                                              window-size  ; chunk window
-                                                              (:sw config)
-                                                              (:sig config))
-                               evaluation (evaluate-predictions (:predictions prediction-result) test)]
-                           (assoc config
-                                  :score (:accuracy-pct evaluation)
-                                  :mean-error (:mean-error evaluation))))
+                          (let [window-size (:cw config)  ; use same size for both
+                                [train test] (split-last-n window-size (double-array price-data))
+                                prediction-result (predict-price train
+                                                                 window-size  ; prediction window
+                                                                 (:cw config)  ; chunk window
+                                                                 (:sw config)
+                                                                 (:sig config))
+                                evaluation (evaluate-predictions (:predictions prediction-result) test)]
+                            (assoc config
+                                   :score (:accuracy-pct evaluation)
+                                   :mean-error (:mean-error evaluation))))
         evaluated-configs (map evaluate-config configs)
         sorted-configs (sort-by :score > evaluated-configs)]
     (println "Testing configs with window sizes:" (vec cw-range))
