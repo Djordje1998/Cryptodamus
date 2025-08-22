@@ -12,7 +12,7 @@
                  [com.toedter/jcalendar "1.4"]
                  [criterium "0.4.6"]]
   :plugins [[lein-midje "3.2.1"]]
-  :main cryptodamus.core
+  :main cryptodamus.gui
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all
                        :jvm-opts ["-Dclojure.compiler.direct-linking=true"]}})
