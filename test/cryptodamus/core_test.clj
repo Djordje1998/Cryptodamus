@@ -325,28 +325,28 @@
  (facts "about 'predict-pattern' function"
         (fact "finds patterns in historical data with basic case"
               (let [chart-data [10 11 12 13 14 15 16 17 18 19 20 21 22 23 24]
-                    patterns (core/predict-pattern chart-data 3 2 1.0)]
+                    patterns (core/predict-pattern chart-data 3 2 3 1.0)]
                 (>= (count patterns) 0) => true
                 (every? map? patterns) => true
                 (every? #(contains? % :score) patterns) => true
                 (every? #(contains? % :match) patterns) => true
                 (every? #(contains? % :outcome) patterns) => true))
         (fact "handles insufficient data gracefully"
-              (core/predict-pattern [1 2] 3 2 1.0) => (throws IllegalArgumentException))
+              (core/predict-pattern [1 2] 3 2 3 1.0) => (throws IllegalArgumentException))
         (fact "handles empty or nil data"
-              (core/predict-pattern [] 3 2 1.0) => []
-              (core/predict-pattern nil 3 2 1.0) => [])
+              (core/predict-pattern [] 3 2 3 1.0) => []
+              (core/predict-pattern nil 3 2 3 1.0) => [])
         (fact "pattern matching respects significance threshold"
               (let [volatile-data [10 50 10 50 10 50 10 50 10 50]
-                    strict-patterns (core/predict-pattern volatile-data 3 1 0.1)
-                    loose-patterns (core/predict-pattern volatile-data 3 1 50.0)]
+                    strict-patterns (core/predict-pattern volatile-data 3 1 3 0.1)
+                    loose-patterns (core/predict-pattern volatile-data 3 1 3 50.0)]
                 (>= (count strict-patterns) 0) => true
                 (>= (count loose-patterns) 0) => true)))
 
  (facts "about 'predict-price' function"
         (fact "predicts future prices based on patterns"
               (let [price-chart [100 101 102 103 104 105 106 107 108 109 110]
-                    result (core/predict-price price-chart 2 3 2 1.0)]
+                    result (core/predict-price price-chart 2 3 2 3 1.0)]
                 (or (nil? result) 
                     (and (contains? result :predictions)
                          (contains? result :scores)
@@ -355,13 +355,13 @@
                          (<= (count (:predictions result)) 2)
                          (every? #(= (count %) 3) (:predictions result)))) => true))
         (fact "handles insufficient data"
-              (core/predict-price [1 2] 1 3 2 1.0) => (throws IllegalArgumentException))
+              (core/predict-price [1 2] 1 3 2 3 1.0) => (throws IllegalArgumentException))
         (fact "handles empty data"
-              (core/predict-price [] 1 3 2 1.0) => (throws NullPointerException)
-              (core/predict-price nil 1 3 2 1.0) => (throws NullPointerException))
+              (core/predict-price [] 1 3 2 3 1.0) => (throws NullPointerException)
+              (core/predict-price nil 1 3 2 3 1.0) => (throws NullPointerException))
         (fact "limits predictions to requested number"
               (let [price-chart (range 1 50) 
-                    result (core/predict-price price-chart 1 3 2 1.0)]
+                    result (core/predict-price price-chart 1 3 2 3 1.0)]
                 (or (nil? result)
                     (and (<= (count (:predictions result)) 1)
                          (<= (count (:scores result)) 1)

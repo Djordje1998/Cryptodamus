@@ -1,12 +1,7 @@
 (ns cryptodamus.core
   (:gen-class)
   (:require [cryptodamus.fetch :as api]
-            [cryptodamus.utils :as utils]
-            [cryptodamus.gui :as gui]
-            [criterium.core :as criterium]))
-
-(defn -main [& args]
-  (gui/show-window))
+            [cryptodamus.utils :as utils]))
 
 (def btc-last-day2 (api/get-price "bitcoin" (utils/days-ago 20) (utils/days-ago 1)))
 (def btc-last-day (vec (range 20)))
@@ -176,6 +171,7 @@
 (def sw 5) ; skip-window
 (def pw 5) ; predict-window
 (def sig 1) ; significance
+(def nop 5) ; number of predictions
 
 (def s1 (partition cw sw (range 100)))
 s1
@@ -205,7 +201,7 @@ s1
     (* 100.0 combined-score)))
 
 ; "Find pattern in past data and return expected pattern"
-(defn predict-pattern [chart-data cw sw sig]
+(defn predict-pattern [chart-data cw sw pw sig]
   (cond
     (or (nil? chart-data) (empty? chart-data)) []
     (< (count chart-data) cw) (throw (IllegalArgumentException. "Insufficient data for given chunk window"))
@@ -215,9 +211,11 @@ s1
          i 0
          r []]
     (let [first-seq (first s)
-          second-seq (second s)
+          outcome-start-idx (+ (* i sw) cw)
+          outcome-seq (when (< outcome-start-idx (count chart-data))
+                        (take pw (drop outcome-start-idx chart-data)))
           delta-diff (dif (delta-avg first-seq) (delta-avg c1))]
-      (if (and (seq (rest s)) second-seq)
+      (if (and (seq (rest s)) outcome-seq (>= (count outcome-seq) pw))
         (recur c1 (rest s) (inc i)
                (if (all-below-limit? delta-diff sig)
                  (do
@@ -230,7 +228,7 @@ s1
                    (into r [{:score (calculate-pattern-score delta-diff sig cw)
                              :match first-seq
                              :base (first first-seq)
-                             :outcome (round 5 (relative-percent-change second-seq))}]))
+                             :outcome (round 5 (relative-percent-change outcome-seq))}]))
                  (do
                    (println "==>" i ". Bad")
                    (println "first " first-seq)
@@ -240,14 +238,14 @@ s1
           (println "End!")
           r))))))
 
-(predict-pattern btc-last-day2 cw sw sig)
+(predict-pattern btc-last-day2 cw sw pw sig)
 
 (defn sort-patterns-by-score
   "Sorts pattern matches by score in descending order."
   [patterns]
   (sort-by :score > patterns))
 
-(sort-patterns-by-score (predict-pattern btc-last-day2 cw sw sig))
+(sort-patterns-by-score (predict-pattern btc-last-day2 cw sw pw sig))
 
 (defn print-sorted-patterns
   "Prints pattern matches sorted by score in a readable format."
@@ -257,22 +255,23 @@ s1
     (println "Pattern:" (vec match))
     (println "Expected outcome:" (vec outcome))))
 
-(print-sorted-patterns (predict-pattern btc-last-day2 cw sw sig))
+(print-sorted-patterns (predict-pattern btc-last-day2 cw sw pw sig))
 
 (defn predict-price
   "Predicts future prices based on historical patterns.
-   Returns top n predicted price sequences sorted by pattern match score.
+   Returns top nop predicted price sequences sorted by pattern match score.
    Parameters:
    - price-chart: sequence of historical prices
-   - n: number of top predicted price to take in count
+   - nop: number of predictions to return
    - cw: chunk window size
    - sw: skip window size
+   - pw: predict window size
    - sig: significance threshold"
-  [price-chart n cw sw sig]
-  (when-let [patterns (predict-pattern price-chart cw sw sig)]
+  [price-chart nop cw sw pw sig]
+  (when-let [patterns (predict-pattern price-chart cw sw pw sig)]
     (let [last-price (double (last price-chart))
           sorted-patterns (sort-patterns-by-score patterns)
-          top-patterns (take n sorted-patterns)
+          top-patterns (take nop sorted-patterns)
           predictions (mapv (fn [{:keys [outcome]}]
                               (mapv (fn [pct] (* last-price (/ (+ 100.0 pct) 100.0)))
                                     outcome))
@@ -284,7 +283,7 @@ s1
       {:predictions predictions
        :scores (mapv :score top-patterns)})))
 
-(predict-price btc-last-day2 pw cw sw sig)
+(predict-price btc-last-day2 nop cw sw pw sig)
 
 
 
@@ -311,33 +310,8 @@ train-data
 (def test-data (get (split-last-n pw (double-array btc-last-day2)) 1))
 test-data
 
-(predict-price train-data pw cw sw sig)
+(predict-price train-data nop cw sw pw sig)
 test-data
-
-;; (defn evaluate-predictions
-;;   "Evaluates multiple prediction sequences against test data.
-;;    Returns a single statistical summary combining all predictions.
-   
-;;    Parameters:
-;;    - predictions: sequence of prediction sequences to evaluate
-;;    - test-data: actual price sequence to compare against
-;;    - tolerance: maximum acceptable difference percentage (default 5.0)"
-;;   [predictions test-data & {:keys [tolerance] :or {tolerance 5.0}}]
-;;   (when (and (seq predictions) (seq test-data))
-;;     (let [all-diffs (mapcat #(abs-dif % test-data) predictions)
-;;           total-points (count all-diffs)
-;;           mean-error (double (/ (apply + all-diffs) total-points))
-;;           max-error (apply max all-diffs)
-;;           within-tolerance (count (filter #(<= % tolerance) all-diffs))
-;;           accuracy-pct (* 100.0 (/ within-tolerance total-points))]
-;;       {:all-diffs all-diffs
-;;        :mean-error mean-error
-;;        :max-error max-error
-;;        :within-tolerance within-tolerance
-;;        :total-points total-points
-;;        :accuracy-pct accuracy-pct
-;;        :num-predictions (count predictions)})))
-
 
 (defn abs-percentage-diff [predicted actual]
   (when-not (zero? actual)
@@ -363,7 +337,7 @@ test-data
 
 
 
-(def predictions (predict-price train-data pw cw sw sig))
+(def predictions (predict-price train-data nop cw sw pw sig))
 (evaluate-predictions (:predictions predictions) test-data :tolerance 1)
 
 (seq test-data)
@@ -380,9 +354,10 @@ test-data
                           (let [window-size (:cw config)  ; use same size for both
                                 [train test] (split-last-n window-size (double-array price-data))
                                 prediction-result (predict-price train
-                                                                 window-size  ; prediction window
+                                                                 nop  ; number of predictions
                                                                  (:cw config)  ; chunk window
                                                                  (:sw config)
+                                                                 window-size  ; prediction window
                                                                  (:sig config))
                                 evaluation (evaluate-predictions (:predictions prediction-result) test)]
                             (assoc config
