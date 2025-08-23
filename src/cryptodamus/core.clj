@@ -1,10 +1,4 @@
-(ns cryptodamus.core
-  (:gen-class)
-  (:require [cryptodamus.fetch :as api]
-            [cryptodamus.utils :as utils]))
-
-(def btc-last-day2 (api/get-price "bitcoin" (utils/days-ago 20) (utils/days-ago 1)))
-(def btc-last-day (vec (range 20)))
+(ns cryptodamus.core)
 
 (defn dif
   "Returns element-wise differences between two equal length numeric sequences.
@@ -14,8 +8,6 @@
     (map - s2 s1)
     (throw (IllegalArgumentException. "Sequences must be of the same length"))))
 
-(dif [1 2 3] [4 1 6])
-
 (defn abs-dif
   "Returns absolute element-wise differences between two equal-length numeric sequences.
    Throws IllegalArgumentException if sequences have different lengths."
@@ -23,8 +15,6 @@
   (if (= (count s1) (count s2))
     (map #(Math/abs (- %2 %1)) s1 s2)
     (throw (IllegalArgumentException. "Sequences must be of the same length"))))
-
-(abs-dif [1 2 3] [4 1 6])
 
 (defn all-below-limit?
   "Checks if non-empty sequence contains only elements with absolute values <= limit.
@@ -34,20 +24,12 @@
     (every? #(<= (Math/abs (double %)) (double l)) s)
     false))
 
-(def x 10)
-(all-below-limit? [80 61 80 100 90] x)
-(all-below-limit? [1 2 3 4 9 10] x)
-(all-below-limit? [] x)
-
 (defn avg
   "Calculates the arithmetic mean in a single pass. Returns nil for empty collections."
   [s]
   (when (seq s)
     (let [[sum cnt] (reduce (fn [[s c] v] [(+ s v) (inc c)]) [0.0 0] s)]
       (/ sum cnt))))
-
-(avg [1 2 3 4 5 6])
-(avg [])
 
 (def ^:private common-scales
   "Precomputed scales for common precisions [1e0, 1e1, ..., 1e18]"
@@ -63,28 +45,17 @@
         scaled (* n scale)]
     (double (/ (Math/round scaled) scale))))
 
-(round-to 3 0.23550)
-
-; round items of array to precision
 (defn round
   "Rounds each element in collection to specified precision."
   [precision s]
   (map (partial round-to precision) s))
 
-(round 3 [2.12313 5.51241 6.5111 10.5231 2.556])
-
-; COMPARE VARIATIONS
 (defn zero-anchoring
   "Anchors the starting point to zero by subtracting the first price from all prices."
   [prices]
   (when (seq prices)
     (let [base (double (first prices))]
       (map #(double (- % base)) prices))))
-
-(zero-anchoring [1 2 3])
-(zero-anchoring [4 5 6])
-(zero-anchoring [7 8 9])
-(zero-anchoring [10 11 12])
 
 (defn relative-percent-change
   "Calculates percentage change relative to first element. Returns doubles."
@@ -93,13 +64,9 @@
     (let [base (double f)]
       (map (fn [e] (double (* 100.0 (/ (- (double e) base) base)))) s))))
 
-(relative-percent-change [99143.84 99644.38 81486.58 101584.41 101728.83])
-(relative-percent-change [4 5 6])
-(relative-percent-change [7 8 9])
-(relative-percent-change [10 9 12])
-
-; not tested
-(defn percentage-change [prices]
+(defn percentage-change
+  "Calculates period-over-period percentage changes for a price sequence."
+  [prices]
   (when (> (count prices) 1)
     (map (fn [prev curr]
            (when (zero? prev)
@@ -107,39 +74,23 @@
            (let [delta (- (double curr) (double prev))
                  base  (double prev)
                  pct (if (neg? base)
-                       ;; For negative bases, use absolute percentage to avoid sign inversion
                        (* 100.0 (/ (Math/abs delta) (Math/abs base)))
-                       ;; For non-negative bases, use signed percentage change
                        (* 100.0 (/ delta base)))]
-              ;; Round to reduce floating point artifacts for precision tests
               (round-to 14 pct)))
          prices
          (rest prices))))
 
-(percentage-change [1 2 3])
-(percentage-change [7 8 9])
-(percentage-change [4 5 6])
-(percentage-change [10 11 12])
-
-; not tested
-(defn price-differences [prices]
+(defn price-differences
+  "Calculates absolute price differences between consecutive periods."
+  [prices]
   (map - (rest prices) prices))
 
-(price-differences [1 2 3])
-(price-differences [4 5 6])
-(price-differences [7 8 9])
-(price-differences [10 9 12])
-
-; not tested
-(defn log-returns [prices]
+(defn log-returns
+  "Calculates logarithmic returns for a price sequence."
+  [prices]
   (map #(Math/log (/ %2 %1))
        prices
        (rest prices)))
-
-(log-returns [1 2 3])
-(log-returns [7 8 9])
-(log-returns [4 5 6])
-(log-returns [10 11 12])
 
 (defn delta-avg
   "Calculates percentage deviation from average. Returns nil for empty collections.
@@ -157,95 +108,47 @@
       :else
       (map #(* 100.0 (/ (- % avg) avg)) s))))
 
-(delta-avg [])
-(delta-avg [25 30 30])
-(delta-avg [30 30 30])
-(delta-avg [0 0 0])
-(delta-avg [-1 0 1])
-
-(dif (delta-avg [25 30 30]) (delta-avg [30 30 30]))
-(all-below-limit? (dif (delta-avg [25 30 30]) (delta-avg [30 30 30])) x)
-
-
-(def cw 5) ; chunk-window
-(def sw 5) ; skip-window
-(def pw 5) ; predict-window
-(def sig 1) ; significance
-(def nop 5) ; number of predictions
-
-(def s1 (partition cw sw (range 100)))
-s1
-(take 5 (range 100))
-(take-last 5 (range 100))
-(last s1)
-(count s1)
-(first s1)
-(rest s1)
-
-
 (defn calculate-pattern-score
   "Calculate pattern matching score based on differences and significance threshold.
    Returns a score between 0-100, where 100 means perfect match and 0 means no match."
   [delta-diff sig cw]
   (let [avg-abs-diff (/ (apply + (map #(Math/abs %) delta-diff)) cw)
         max-abs-diff (apply max (map #(Math/abs %) delta-diff))
-
-        ;; Normalize to 0-1 scale relative to significance threshold
         avg-score (max 0.0 (- 1.0 (/ avg-abs-diff sig)))
         max-score (max 0.0 (- 1.0 (/ max-abs-diff sig)))
-
-        ;; Combine average and max penalties (you can adjust weights)
         combined-score (+ (* 0.7 avg-score) (* 0.3 max-score))]
-
-
     (* 100.0 combined-score)))
 
-; "Find pattern in past data and return expected pattern"
-(defn predict-pattern [chart-data cw sw pw sig]
+(defn predict-pattern
+  "Find pattern in past data and return expected pattern outcomes."
+  [chart-data cw sw pw sig]
   (cond
     (or (nil? chart-data) (empty? chart-data)) []
     (< (count chart-data) cw) (throw (IllegalArgumentException. "Insufficient data for given chunk window"))
     :else
     (loop [c1 (take-last cw chart-data)
-         s (partition cw sw chart-data)
-         i 0
-         r []]
-    (let [first-seq (first s)
-          outcome-start-idx (+ (* i sw) cw)
-          outcome-seq (when (< outcome-start-idx (count chart-data))
-                        (take pw (drop outcome-start-idx chart-data)))
-          delta-diff (dif (delta-avg first-seq) (delta-avg c1))]
-      (if (and (seq (rest s)) outcome-seq (>= (count outcome-seq) pw))
-        (recur c1 (rest s) (inc i)
-               (if (all-below-limit? delta-diff sig)
-                 (do
-                   (println "==>" i ". Good")
-                   (println "c1 " c1)
-                   (println "delta-avg c1 " (delta-avg c1))
-                   (println "first " first-seq)
-                   (println "delta-avg first " (delta-avg first-seq))
-                   (println "delta-diff " delta-diff)
+           s (partition cw sw chart-data)
+           i 0
+           r []]
+      (let [first-seq (first s)
+            outcome-start-idx (+ (* i sw) cw)
+            outcome-seq (when (< outcome-start-idx (count chart-data))
+                          (take pw (drop outcome-start-idx chart-data)))
+            delta-diff (dif (delta-avg first-seq) (delta-avg c1))]
+        (if (and (seq (rest s)) outcome-seq (>= (count outcome-seq) pw))
+          (recur c1 (rest s) (inc i)
+                 (if (all-below-limit? delta-diff sig)
                    (into r [{:score (calculate-pattern-score delta-diff sig cw)
                              :match first-seq
                              :base (first first-seq)
-                             :outcome (round 5 (relative-percent-change outcome-seq))}]))
-                 (do
-                   (println "==>" i ". Bad")
-                   (println "first " first-seq)
-                   (println "delta-diff " delta-diff)
-                   r)))
-        (do
-          (println "End!")
-          r))))))
-
-(predict-pattern btc-last-day2 cw sw pw sig)
+                             :outcome (round 5 (relative-percent-change outcome-seq))}])
+                   r))
+          r)))))
 
 (defn sort-patterns-by-score
   "Sorts pattern matches by score in descending order."
   [patterns]
   (sort-by :score > patterns))
-
-(sort-patterns-by-score (predict-pattern btc-last-day2 cw sw pw sig))
 
 (defn print-sorted-patterns
   "Prints pattern matches sorted by score in a readable format."
@@ -255,18 +158,9 @@ s1
     (println "Pattern:" (vec match))
     (println "Expected outcome:" (vec outcome))))
 
-(print-sorted-patterns (predict-pattern btc-last-day2 cw sw pw sig))
-
 (defn predict-price
   "Predicts future prices based on historical patterns.
-   Returns top nop predicted price sequences sorted by pattern match score.
-   Parameters:
-   - price-chart: sequence of historical prices
-   - nop: number of predictions to return
-   - cw: chunk window size
-   - sw: skip window size
-   - pw: predict window size
-   - sig: significance threshold"
+   Returns top nop predicted price sequences sorted by pattern match score."
   [price-chart nop cw sw pw sig]
   (when-let [patterns (predict-pattern price-chart cw sw pw sig)]
     (let [last-price (double (last price-chart))
@@ -276,48 +170,26 @@ s1
                               (mapv (fn [pct] (* last-price (/ (+ 100.0 pct) 100.0)))
                                     outcome))
                             top-patterns)]
-      (println "last-price" last-price)
-      (println "sorted-patterns" sorted-patterns)
-      (println "top-patterns" top-patterns)
-      (println "predictions" predictions)
       {:predictions predictions
        :scores (mapv :score top-patterns)})))
 
-(predict-price btc-last-day2 nop cw sw pw sig)
-
-
-
-; EVALUATE PREDICTION
-
-
 (defn split-last-n
   "Splits a primitive double array into two double arrays.
-  Parameters:
-  - x: number of elements to split from the end
-  - arr: primitive double array to split"
+   Returns [training-data test-data] where test-data contains the last x elements."
   [^long x ^doubles arr]
   (let [n (alength arr)
         split-index (- n x)]
     [(java.util.Arrays/copyOfRange arr 0 split-index)
      (java.util.Arrays/copyOfRange arr split-index n)]))
 
-(def test-array (double-array (range 1000000)))
-;; (criterium/with-progress-reporting (criterium/quick-bench (split-last-n 200 test-array))) ; 1,458845 ms
-
-(def train-data (get (split-last-n pw (double-array btc-last-day2)) 0))
-train-data
-
-(def test-data (get (split-last-n pw (double-array btc-last-day2)) 1))
-test-data
-
-(predict-price train-data nop cw sw pw sig)
-test-data
-
-(defn abs-percentage-diff [predicted actual]
+(defn abs-percentage-diff
+  "Calculates absolute percentage difference between predicted and actual values."
+  [predicted actual]
   (when-not (zero? actual)
     (* 100.0 (/ (Math/abs (- predicted actual)) (Math/abs actual)))))
 
 (defn evaluate-predictions
+  "Evaluates prediction accuracy against test data with configurable tolerance."
   [predictions test-data & {:keys [tolerance] :or {tolerance 5.0}}]
   (let [all-diffs (filter some?
                           (mapcat (fn [prediction]
@@ -335,42 +207,22 @@ test-data
      :accuracy-pct accuracy-pct
      :num-predictions (count predictions)}))
 
-
-
-(def predictions (predict-price train-data nop cw sw pw sig))
-(evaluate-predictions (:predictions predictions) test-data :tolerance 1)
-
-(seq test-data)
-
 (defn optimize-config
-  "Tests different configurations and returns map of configs sorted by prediction accuracy.
+  "Tests different configurations and returns configs sorted by prediction accuracy.
    Uses same window size for both pattern matching and prediction."
-  [price-data {:keys [cw-range sw-range sig-range]}]
+  [price-data {:keys [cw-range sw-range sig-range]} nop]
   (let [configs (for [cw cw-range
                       sw sw-range
                       sig sig-range]
                   {:cw cw :sw sw :sig sig})
         evaluate-config (fn [config]
-                          (let [window-size (:cw config)  ; use same size for both
+                          (let [window-size (:cw config)
                                 [train test] (split-last-n window-size (double-array price-data))
-                                prediction-result (predict-price train
-                                                                 nop  ; number of predictions
-                                                                 (:cw config)  ; chunk window
-                                                                 (:sw config)
-                                                                 window-size  ; prediction window
-                                                                 (:sig config))
+                                prediction-result (predict-price train nop (:cw config) (:sw config) window-size (:sig config))
                                 evaluation (evaluate-predictions (:predictions prediction-result) test)]
                             (assoc config
                                    :score (:accuracy-pct evaluation)
                                    :mean-error (:mean-error evaluation))))
         evaluated-configs (map evaluate-config configs)
         sorted-configs (sort-by :score > evaluated-configs)]
-    (println "Testing configs with window sizes:" (vec cw-range))
     (take 10 sorted-configs)))
-
-(def config-ranges
-  {:cw-range (range 3 8)    ; window size for both pattern and prediction
-   :sw-range (range 3 8)    ; skip-window 
-   :sig-range [0.5 1.0 1.5]})  ; significance
-
-(optimize-config btc-last-day2 config-ranges)
