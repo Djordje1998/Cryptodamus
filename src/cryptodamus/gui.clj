@@ -5,17 +5,12 @@
             [cryptodamus.core :as core]
             [clojure.java.io :as io])
   (:import [org.jfree.chart ChartPanel ChartFactory]
-           [org.jfree.chart.plot XYPlot PlotOrientation]
            [org.jfree.data.xy XYSeries XYSeriesCollection]
-           [java.awt Color Taskbar]
+           [java.awt Color]
            [javax.swing JFrame]
-           [javax.imageio ImageIO]
-           [java.time LocalDate ZoneId]
            [java.util Date]
            [com.toedter.calendar JDateChooser]
-           [java.time.temporal ChronoUnit]
-           [org.jfree.chart.renderer.xy XYLineAndShapeRenderer]
-           [org.jfree.chart.labels XYToolTipGenerator]))
+           [org.jfree.chart.renderer.xy XYLineAndShapeRenderer]))
 
 ;; Define atoms
 ;; Use java.util.Date for simplicity with JDateChooser
@@ -36,7 +31,7 @@
         dataset (XYSeriesCollection. series)
         chart (ChartFactory/createXYLineChart
                "Crypto Price Chart"
-               "Days"
+               "Price Points"
                "Price (USD)"
                dataset
                org.jfree.chart.plot.PlotOrientation/VERTICAL
@@ -47,14 +42,12 @@
                          (.getRenderer plot)
                          (org.jfree.chart.renderer.xy.XYLineAndShapeRenderer.)))
         ;; Create tooltip generator
-        tooltip-gen (proxy [org.jfree.chart.labels.XYToolTipGenerator] []
-                      (generateToolTip [dataset series item]
+        tooltip-gen (reify org.jfree.chart.labels.XYToolTipGenerator
+                      (generateToolTip [_ dataset series item]
                         (let [x (.getXValue dataset series item)
-                              y (.getYValue dataset series item)]
-                          (format "%s: Day %.0f - $%.2f"
-                                  (.getSeriesKey dataset series)
-                                  x
-                                  y))))]
+                              y (.getYValue dataset series item)
+                              series-name (.getSeriesKey dataset series)]
+                          (format "%s: Point %.0f - $%.2f" series-name x y))))]
 
     ;; Make sure shapes are visible for tooltips and configure tooltips
     (doto ^org.jfree.chart.renderer.xy.XYLineAndShapeRenderer renderer
@@ -113,21 +106,18 @@
             (.addSeries dataset actual)
             (set-series-color! renderer idx0 (Color. 33 150 243)) ; blue
             (.setSeriesStroke renderer idx0 (java.awt.BasicStroke. 2.0)))
-          ;; Add prediction series
+          ;; Add prediction series with different colors and scores in legend
           (when (seq predictions)
-            (doseq [[i pred] (map-indexed vector predictions)]
-              (let [series (XYSeries. (str "Prediction " (inc i)))
-                    len (count pred)
-                    start-x (dec n)] ; extend from last actual point
-                (doseq [j (range len)]
-                  (.add series (double (+ start-x (inc j))) (double (nth pred j))))
-                (let [idx (.getSeriesCount dataset)
-                      score (nth scores i 0.0)
-                      alpha (int (Math/round (* 255.0 (max 0.15 (min 1.0 (/ (double score) 100.0))))))
-                      color (Color. 244 67 54 alpha)] ; red with alpha
-                  (.addSeries dataset series)
-                  (set-series-color! renderer idx color)
-                  (.setSeriesStroke renderer idx (java.awt.BasicStroke. 2.0))))))
+            (let [pred-colors [Color/RED (Color. 255 100 100) (Color. 200 0 0) 
+                              (Color. 255 150 150) (Color. 150 0 0)]]
+              (doseq [[i prediction score] (map vector (range) predictions scores)]
+                (let [pred-series (XYSeries. (str "Prediction " (inc i) " (Score: " (format "%.1f" score) ")"))]
+                  (doseq [j (range (count prediction))]
+                    (.add pred-series (double (+ n j)) (double (nth prediction j))))
+                  (.addSeries dataset pred-series)
+                  ;; Set different prediction colors
+                  (set-series-color! renderer (+ 1 i) (nth pred-colors i (Color. 255 0 0)))
+                  (.setSeriesStroke renderer (+ 1 i) (java.awt.BasicStroke. 2.0))))))
 
           ;; Optionally overlay actual data from end date to current date
           (when @show-future?
@@ -157,18 +147,29 @@
 )
   
   (defn create-controls [chart-panel]
-  (let [start-picker (JDateChooser.)
-        end-picker (JDateChooser.)
+  (let [start-picker (doto (JDateChooser.)
+                       (.setPreferredSize (java.awt.Dimension. 120 25)))
+        end-picker (doto (JDateChooser.)
+                     (.setPreferredSize (java.awt.Dimension. 120 25)))
         coin-box (s/combobox :model (sort (seq api/supported-cryptocurrencies)))
         future-toggle (s/checkbox :text "Show actual future" :selected? @show-future?)
-        ;; Parameter input fields
-        cw-field (s/text :text (str @cw-param) :columns 5)
-        sw-field (s/text :text (str @sw-param) :columns 5)
-        pw-field (s/text :text (str @pw-param) :columns 5)
-        sig-field (s/text :text (str @sig-param) :columns 5)
-        nop-field (s/text :text (str @nop-param) :columns 5)
+        ;; Parameter input fields with very compact widths
+        cw-field (doto (s/text :text (str @cw-param) :columns 1)
+                   (s/config! :preferred-size [30 :by 20]))
+        sw-field (doto (s/text :text (str @sw-param) :columns 1)
+                   (s/config! :preferred-size [30 :by 20]))
+        pw-field (doto (s/text :text (str @pw-param) :columns 1)
+                   (s/config! :preferred-size [30 :by 20]))
+        sig-field (doto (s/text :text (str @sig-param) :columns 1)
+                    (s/config! :preferred-size [40 :by 20]))
+        nop-field (doto (s/text :text (str @nop-param) :columns 1)
+                    (s/config! :preferred-size [30 :by 20]))
         ;; Generate prediction button
         predict-btn (s/button :text "Generate New Prediction")
+        ;; Optimize button
+        optimize-btn (s/button :text "Optimize Config")
+        ;; Reset to default button
+        reset-btn (s/button :text "Reset to Default")
         ;; Future toggle is always enabled - shows actual prices from end date to current date
         enable-future-toggle (fn [_ _]
                                ;; Always keep the toggle enabled
@@ -200,7 +201,47 @@
                                                                       :cw cw-val :sw sw-val :pw pw-val :sig sig-val :nop nop-val)]
                              (enable-future-toggle @end-date max-pred-len))))
                        (catch NumberFormatException _
-                         (s/alert "Please enter valid numeric values for all parameters"))))]
+                         (s/alert "Please enter valid numeric values for all parameters"))))
+        ;; Optimize function
+        optimize-fn (fn [_]
+                      (try
+                        (s/alert "Optimizing configuration... This may take a moment.")
+                        (let [prices-arr (api/get-price @selected-coin 
+                                                       (utils/->unix-timestamp @start-date)
+                                                       (utils/->unix-timestamp @end-date))
+                              prices (vec (seq prices-arr))
+                              optimal-configs (core/optimize-config prices 
+                                                                   {:cw-range [3 4 5 6 7]
+                                                                    :sw-range [2 3 4 5]
+                                                                    :sig-range [0.5 1.0 1.5 2.0]})]
+                          (when (seq optimal-configs)
+                            (let [best-config (first optimal-configs)]
+                              (reset! cw-param (:cw best-config))
+                              (reset! sw-param (:sw best-config))
+                              (reset! sig-param (:sig best-config))
+                              (s/text! cw-field (str (:cw best-config)))
+                              (s/text! sw-field (str (:sw best-config)))
+                              (s/text! sig-field (str (:sig best-config)))
+                              (update-chart chart-panel @selected-coin @start-date @end-date)
+                              (s/alert (str "Optimization complete! Best config: CW=" (:cw best-config) 
+                                           " SW=" (:sw best-config) " Sig=" (:sig best-config)
+                                           " Score=" (format "%.2f" (:score best-config)) "%")))))
+                        (catch Exception e
+                          (s/alert (str "Optimization failed: " (.getMessage e))))))
+        ;; Reset to default function  
+        reset-fn (fn [_]
+                   (reset! cw-param 5)
+                   (reset! sw-param 5) 
+                   (reset! pw-param 5)
+                   (reset! sig-param 1)
+                   (reset! nop-param 5)
+                   (s/text! cw-field "5")
+                   (s/text! sw-field "5")
+                   (s/text! pw-field "5")
+                   (s/text! sig-field "1")
+                   (s/text! nop-field "5")
+                   (update-chart chart-panel @selected-coin @start-date @end-date)
+                   (s/alert "Configuration reset to default values!"))]
     ;; Set initial values
     (.setDate start-picker ^java.util.Date @start-date)
     (.setDate end-picker ^java.util.Date @end-date)
@@ -217,20 +258,56 @@
                                          (reset! show-future? (s/selection e))
                                          (update-fn nil)))
     (s/listen predict-btn :action predict-fn)
-    ;; Layout
-    (s/vertical-panel
-     :items [(s/horizontal-panel
-              :items ["Start: " start-picker
-                      "End: " end-picker
-                      "Coin: " coin-box
-                      future-toggle])
-             (s/horizontal-panel
-              :items ["CW: " cw-field
-                      "SW: " sw-field
-                      "PW: " pw-field
-                      "Sig: " sig-field
-                      "NOP: " nop-field
-                      predict-btn])])))
+    (s/listen optimize-btn :action optimize-fn)
+    (s/listen reset-btn :action reset-fn)
+    ;; Single consolidated Control Panel with improved spacing
+    (s/border-panel
+     :border (javax.swing.BorderFactory/createTitledBorder "Control Panel")
+     :center (s/vertical-panel
+              :items [
+                ;; Date Selection Row with better spacing
+                (s/horizontal-panel
+                 :items [(s/label :text "Start:")
+                         (s/label :text " ")
+                         start-picker
+                         (s/label :text "    End:")
+                         (s/label :text " ")
+                         end-picker
+                         (s/label :text "    Coin:")
+                         (s/label :text " ")
+                         coin-box
+                         (s/label :text "      ")
+                         future-toggle])
+                
+                (s/label :text " ")  ; Vertical spacing
+                
+                ;; Configuration Parameters Row with better spacing
+                (s/horizontal-panel
+                 :items [(s/label :text "CW:")
+                         (s/label :text " ")
+                         cw-field
+                         (s/label :text "   SW:")
+                         (s/label :text " ")
+                         sw-field
+                         (s/label :text "   PW:")
+                         (s/label :text " ")
+                         pw-field
+                         (s/label :text "   Sig:")
+                         (s/label :text " ")
+                         sig-field
+                         (s/label :text "   NOP:")
+                         (s/label :text " ")
+                         nop-field])
+                
+                (s/label :text " ")  ; Vertical spacing
+                
+                ;; Action Buttons Row with better spacing
+                (s/horizontal-panel
+                 :items [predict-btn
+                         (s/label :text "     ")
+                         optimize-btn
+                         (s/label :text "     ")
+                         reset-btn])]))))
 
   (defn show-window []
     (s/native!)
