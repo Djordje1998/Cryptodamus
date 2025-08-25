@@ -366,3 +366,58 @@
                     (and (<= (count (:predictions result)) 1)
                          (<= (count (:scores result)) 1)
                          (every? #(= (count %) 3) (:predictions result)))) => true)))
+
+ (facts "about 'optimize-config' function"
+        (fact "optimizes configuration parameters with small dataset"
+              (let [price-data [100 101 102 103 104 105 106 107 108 109 110 111 112]
+                    config-ranges {:cw-range [3 4]
+                                   :sw-range [1 2] 
+                                   :pw-range [2 3]
+                                   :sig-range [0.5 1.0]
+                                   :comparator-fns [["delta-avg" core/delta-avg]]}
+                    results (core/optimize-config price-data config-ranges 1)]
+                (>= (count results) 1) => true
+                (<= (count results) 10) => true
+                (every? map? results) => true
+                (every? #(contains? % :cw) results) => true
+                (every? #(contains? % :sw) results) => true
+                (every? #(contains? % :pw) results) => true
+                (every? #(contains? % :sig) results) => true
+                (every? #(contains? % :score) results) => true
+                (every? #(contains? % :mean-error) results) => true
+                (every? #(contains? % :comparator-name) results) => true))
+        (fact "returns results sorted by score in descending order"
+              (let [price-data [100 102 104 106 108 110 112 114 116 118 120]
+                    config-ranges {:cw-range [3]
+                                   :sw-range [1 2]
+                                   :pw-range [2]
+                                   :sig-range [1.0 2.0]
+                                   :comparator-fns [["delta-avg" core/delta-avg]]}
+                    results (core/optimize-config price-data config-ranges 1)]
+                (when (> (count results) 1)
+                  (let [scores (map :score results)]
+                    (= scores (sort > scores)) => true))))
+        (fact "handles edge cases gracefully"
+              (let [minimal-data [100 101 102 103 104]
+                    config-ranges {:cw-range [3]
+                                   :sw-range [1]
+                                   :pw-range [1]
+                                   :sig-range [1.0]
+                                   :comparator-fns [["delta-avg" core/delta-avg]]}
+                    results (core/optimize-config minimal-data config-ranges 1)]
+                (>= (count results) 0) => true
+                (every? #(>= (:score %) 0.0) results) => true
+                (every? #(>= (:mean-error %) 0.0) results) => true))
+        (fact "works with multiple comparator functions"
+              (let [price-data [100 105 110 115 120 125 130 135 140 145 150]
+                    config-ranges {:cw-range [3]
+                                   :sw-range [1]
+                                   :pw-range [2]
+                                   :sig-range [1.0]
+                                   :comparator-fns [["delta-avg" core/delta-avg]
+                                                    ["percentage-change" core/percentage-change]]}
+                    results (core/optimize-config price-data config-ranges 1)]
+                (>= (count results) 2) => true
+                (let [comparator-names (set (map :comparator-name results))]
+                  (or (contains? comparator-names "delta-avg")
+                      (contains? comparator-names "percentage-change")) => true))))
