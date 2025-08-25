@@ -108,6 +108,15 @@
       :else
       (map #(* 100.0 (/ (- % avg) avg)) s))))
 
+(def comparator-fns
+  "Map of available comparator functions for pattern matching"
+  {"delta-avg" delta-avg
+   "percentage-change" percentage-change
+   "log-returns" log-returns
+   "price-differences" price-differences
+   "relative-percent-change" relative-percent-change
+   "zero-anchoring" zero-anchoring})
+
 (defn calculate-pattern-score
   "Calculate pattern matching score based on differences and significance threshold.
    Returns a score between 0-100, where 100 means perfect match and 0 means no match."
@@ -121,7 +130,7 @@
 
 (defn predict-pattern
   "Find pattern in past data and return expected pattern outcomes."
-  [chart-data cw sw pw sig]
+  [chart-data cw sw pw sig comparator-fn]
   (cond
     (or (nil? chart-data) (empty? chart-data)) []
     (< (count chart-data) cw) (throw (IllegalArgumentException. "Insufficient data for given chunk window"))
@@ -134,7 +143,7 @@
             outcome-start-idx (+ (* i sw) cw)
             outcome-seq (when (< outcome-start-idx (count chart-data))
                           (take pw (drop outcome-start-idx chart-data)))
-            delta-diff (dif (delta-avg first-seq) (delta-avg c1))]
+            delta-diff (dif (comparator-fn first-seq) (comparator-fn c1))]
         (if (and (seq (rest s)) outcome-seq (>= (count outcome-seq) pw))
           (recur c1 (rest s) (inc i)
                  (if (all-below-limit? delta-diff sig)
@@ -161,8 +170,9 @@
 (defn predict-price
   "Predicts future prices based on historical patterns.
    Returns top nop predicted price sequences sorted by pattern match score."
-  [price-chart nop cw sw pw sig]
-  (when-let [patterns (predict-pattern price-chart cw sw pw sig)]
+  [price-chart nop cw sw pw sig comparator-fn]
+  (println "predict-price") 
+  (when-let [patterns (predict-pattern price-chart cw sw pw sig comparator-fn)]
     (let [last-price (double (last price-chart))
           sorted-patterns (sort-patterns-by-score patterns)
           top-patterns (take nop sorted-patterns)
@@ -191,38 +201,58 @@
 (defn evaluate-predictions
   "Evaluates prediction accuracy against test data with configurable tolerance."
   [predictions test-data & {:keys [tolerance] :or {tolerance 5.0}}]
+  ;; Tests expect an exception when predictions is empty
+  (when-not (seq predictions)
+    (throw (ArithmeticException. "Empty predictions")))
   (let [all-diffs (filter some?
                           (mapcat (fn [prediction]
                                     (map abs-percentage-diff prediction test-data))
                                   predictions))
-        total-points (count all-diffs)
-        mean-error (/ (reduce + all-diffs) total-points)
-        max-error (apply max all-diffs)
-        within-tolerance (count (filter #(<= % tolerance) all-diffs))
-        accuracy-pct (* 100.0 (/ within-tolerance total-points))]
-    {:mean-error mean-error
-     :max-error max-error
-     :within-tolerance within-tolerance
-     :total-points total-points
-     :accuracy-pct accuracy-pct
-     :num-predictions (count predictions)}))
+        total-points (count all-diffs)]
+    (if (zero? total-points)
+      {:mean-error Double/MAX_VALUE
+       :max-error Double/MAX_VALUE
+       :within-tolerance 0
+       :total-points 0
+       :accuracy-pct 0.0
+       :num-predictions (count predictions)}
+      (let [mean-error (/ (reduce + all-diffs) total-points)
+            max-error (apply max all-diffs)
+            within-tolerance (count (filter #(<= % tolerance) all-diffs))
+            accuracy-pct (* 100.0 (/ within-tolerance total-points))]
+        {:mean-error mean-error
+         :max-error max-error
+         :within-tolerance within-tolerance
+         :total-points total-points
+         :accuracy-pct accuracy-pct
+         :num-predictions (count predictions)}))))
 
 (defn optimize-config
-  "Tests different configurations and returns configs sorted by prediction accuracy.
-   Uses same window size for both pattern matching and prediction."
-  [price-data {:keys [cw-range sw-range sig-range]} nop]
+  "Tests different configurations and comparator functions, returns configs sorted by prediction accuracy."
+  [price-data {:keys [cw-range sw-range pw-range sig-range comparator-fns]} nop]
   (let [configs (for [cw cw-range
                       sw sw-range
-                      sig sig-range]
-                  {:cw cw :sw sw :sig sig})
+                      pw pw-range
+                      sig sig-range
+                      [comp-name comp-fn] (or comparator-fns comparator-fns)]
+                  {:cw cw :sw sw :pw pw :sig sig :comparator-name comp-name :comparator-fn comp-fn})
         evaluate-config (fn [config]
-                          (let [window-size (:cw config)
-                                [train test] (split-last-n window-size (double-array price-data))
-                                prediction-result (predict-price train nop (:cw config) (:sw config) window-size (:sig config))
-                                evaluation (evaluate-predictions (:predictions prediction-result) test)]
-                            (assoc config
-                                   :score (:accuracy-pct evaluation)
-                                   :mean-error (:mean-error evaluation))))
+                          (try
+                            (let [window-size (:cw config)
+                                  [train test] (split-last-n window-size (double-array price-data))
+                                  prediction-result (predict-price train nop (:cw config) (:sw config) (:pw config) (:sig config) (:comparator-fn config))]
+                              (if (and prediction-result (:predictions prediction-result) (seq (:predictions prediction-result)))
+                                (let [evaluation (evaluate-predictions (:predictions prediction-result) test)]
+                                  (assoc config
+                                         :score (:accuracy-pct evaluation)
+                                         :mean-error (:mean-error evaluation)))
+                                (assoc config
+                                       :score 0.0
+                                       :mean-error Double/MAX_VALUE)))
+                            (catch Exception e
+                              (assoc config
+                                     :score 0.0
+                                     :mean-error Double/MAX_VALUE))))
         evaluated-configs (map evaluate-config configs)
         sorted-configs (sort-by :score > evaluated-configs)]
     (take 10 sorted-configs)))
