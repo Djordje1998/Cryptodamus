@@ -60,7 +60,7 @@
 (defn create-single-slider [label min-val max-val current-val]
   (let [slider (doto (JSlider. min-val max-val current-val)
                  (.setOrientation SwingConstants/HORIZONTAL)
-                 (.setPreferredSize (Dimension. 200 50))
+                 (.setPreferredSize (Dimension. 280 60))
                  (.setPaintTicks true)
                  (.setPaintLabels true)
                  (.setMajorTickSpacing (max 1 (/ (- max-val min-val) 5))))
@@ -97,7 +97,7 @@
         scaled-current (int (* current-val scale))
         slider (doto (JSlider. scaled-min scaled-max scaled-current)
                  (.setOrientation SwingConstants/HORIZONTAL)
-                 (.setPreferredSize (Dimension. 200 50))
+                 (.setPreferredSize (Dimension. 280 60))
                  (.setPaintTicks true)
                  (.setPaintLabels true)
                  (.setMajorTickSpacing (max 1 (/ (- scaled-max scaled-min) 5))))
@@ -149,13 +149,13 @@
         
         min-slider (doto (JSlider. scaled-min scaled-max scaled-current-min)
                      (.setOrientation SwingConstants/HORIZONTAL)
-                     (.setPreferredSize (Dimension. 200 50))
+                     (.setPreferredSize (Dimension. 280 60))
                      (.setPaintTicks true)
                      (.setPaintLabels true)
                      (.setMajorTickSpacing (max 1 (/ (- scaled-max scaled-min) 5))))
         max-slider (doto (JSlider. scaled-min scaled-max scaled-current-max)
                      (.setOrientation SwingConstants/HORIZONTAL)
-                     (.setPreferredSize (Dimension. 200 50))
+                     (.setPreferredSize (Dimension. 280 60))
                      (.setPaintTicks true)
                      (.setPaintLabels true)
                      (.setMajorTickSpacing (max 1 (/ (- scaled-max scaled-min) 5))))
@@ -220,13 +220,13 @@
 (defn create-range-slider [label min-val max-val current-min current-max]
   (let [min-slider (doto (JSlider. min-val max-val current-min)
                      (.setOrientation SwingConstants/HORIZONTAL)
-                     (.setPreferredSize (Dimension. 200 50))
+                     (.setPreferredSize (Dimension. 280 60))
                      (.setPaintTicks true)
                      (.setPaintLabels true)
                      (.setMajorTickSpacing (max 1 (/ (- max-val min-val) 5))))
         max-slider (doto (JSlider. min-val max-val current-max)
                      (.setOrientation SwingConstants/HORIZONTAL)
-                     (.setPreferredSize (Dimension. 200 50))
+                     (.setPreferredSize (Dimension. 280 60))
                      (.setPaintTicks true)
                      (.setPaintLabels true)
                      (.setMajorTickSpacing (max 1 (/ (- max-val min-val) 5))))
@@ -626,53 +626,57 @@
                 {:keys [cw-slider sw-slider pw-slider sig-slider tolerance-slider nop-slider-opt comparator-checkboxes]} dialog-components
                 config-counter (create-config-count-calculator cw-slider sw-slider pw-slider sig-slider comparator-checkboxes)
                 
-                comparator-panel (s/border-panel
-                                  :border (javax.swing.BorderFactory/createTitledBorder "Comparator Functions")
-                                  :center (s/vertical-panel
-                                           :items [(s/label :text " ")
-                                                   (s/horizontal-panel
-                                                    :items [(get comparator-checkboxes "delta-avg")
-                                                            (s/label :text "  ")
-                                                            (get comparator-checkboxes "percentage-change")])
-                                                   (s/horizontal-panel
-                                                    :items [(get comparator-checkboxes "log-returns")
-                                                            (s/label :text "  ")
-                                                            (get comparator-checkboxes "price-differences")])
-                                                   (s/horizontal-panel
-                                                    :items [(get comparator-checkboxes "relative-percent-change")
-                                                            (s/label :text "  ")
-                                                            (get comparator-checkboxes "zero-anchoring")])
-                                                   (s/label :text " ")]))
+                ;; Create a more compact horizontal layout
+                left-column (s/vertical-panel
+                             :items [(:panel cw-slider)
+                                     (s/label :text " ")
+                                     (:panel sw-slider)])
+                
+                middle-column (s/vertical-panel
+                               :items [(:panel pw-slider)
+                                       (s/label :text " ")
+                                       (:panel sig-slider)])
+                
+                right-column (s/vertical-panel
+                              :items [(:panel tolerance-slider)
+                                      (s/label :text " ")
+                                      (:panel nop-slider-opt)])
+                
+                ;; Compact comparator panel with 3 columns
+                comparator-compact (s/border-panel
+                                    :border (javax.swing.BorderFactory/createTitledBorder "Comparator Functions")
+                                    :center (s/horizontal-panel
+                                             :items [(s/vertical-panel
+                                                      :items [(get comparator-checkboxes "delta-avg")
+                                                              (get comparator-checkboxes "percentage-change")])
+                                                     (s/label :text "  ")
+                                                     (s/vertical-panel
+                                                      :items [(get comparator-checkboxes "log-returns")
+                                                              (get comparator-checkboxes "price-differences")])
+                                                     (s/label :text "  ")
+                                                     (s/vertical-panel
+                                                      :items [(get comparator-checkboxes "relative-percent-change")
+                                                              (get comparator-checkboxes "zero-anchoring")])]))
+                
+                info-panel (s/border-panel
+                            :border (javax.swing.BorderFactory/createTitledBorder "Optimization Info")
+                            :center (s/vertical-panel
+                                     :items [(:label config-counter)
+                                             (s/label :text "Note: Larger ranges will take longer to optimize")]))
                 
                 dialog-content (s/border-panel
                                 :border (javax.swing.BorderFactory/createTitledBorder "Optimization Parameter Configuration")
                                 :center (s/vertical-panel
-                                         :items [(s/label :text " ")
-                                                 (s/horizontal-panel
-                                                  :items [(:panel cw-slider)
-                                                          (s/label :text "    ")
-                                                          (:panel sw-slider)])
+                                         :items [(s/horizontal-panel
+                                                  :items [left-column
+                                                          (s/label :text "        ")
+                                                          middle-column
+                                                          (s/label :text "        ")
+                                                          right-column])
                                                  (s/label :text " ")
-                                                 (s/horizontal-panel
-                                                  :items [(:panel pw-slider)
-                                                          (s/label :text "    ")
-                                                          (:panel sig-slider)])
+                                                 comparator-compact
                                                  (s/label :text " ")
-                                                 (:panel tolerance-slider)
-                                                 (s/label :text " ")
-                                                 (:panel nop-slider-opt)
-                                                 (s/label :text " ")
-                                                 comparator-panel
-                                                 (s/label :text " ")
-                                                 (s/border-panel
-                                                  :border (javax.swing.BorderFactory/createTitledBorder "Optimization Info")
-                                                  :center (s/vertical-panel
-                                                           :items [(s/label :text " ")
-                                                                   (:label config-counter)
-                                                                   (s/label :text " ")
-                                                                   (s/label :text "Note: Larger ranges will take longer to optimize")
-                                                                   (s/label :text " ")]))
-                                                 (s/label :text " ")]))
+                                                 info-panel]))
                 
                 options (into-array String ["Start Training" "Cancel"])
                 result (javax.swing.JOptionPane/showOptionDialog
