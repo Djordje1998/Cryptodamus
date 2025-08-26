@@ -1,6 +1,8 @@
 # Cryptodamus
 
-A cryptocurrency price prediction application that implements pattern recognition techniques to analyze historical price data. Built in Clojure with a Swing GUI interface.
+**Your personal Nostradamus for cryptocurrency markets.** 
+
+Cryptocurrency price prediction application that implements naive pattern recognition techniques to analyze historical price data and forecast future market movements. Built in Clojure with an intuitive Swing GUI interface.
 
 ## Overview
 
