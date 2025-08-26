@@ -1,4 +1,5 @@
-(ns cryptodamus.core)
+(ns cryptodamus.core
+  (:require [clojure.string :as str]))
 
 (defn dif
   "Returns element-wise differences between two equal length numeric sequences.
@@ -167,11 +168,21 @@
     (println "Pattern:" (vec match))
     (println "Expected outcome:" (vec outcome))))
 
+(defn fn-name
+  "Extracts the function name from a function object."
+  [f]
+  (or (:name (meta f)) 
+      (-> (str f) 
+          (str/split #"@") 
+          first 
+          (str/split #"\$") 
+          last)))
+
 (defn predict-price
   "Predicts future prices based on historical patterns.
    Returns top nop predicted price sequences sorted by pattern match score."
   [price-chart nop cw sw pw sig comparator-fn]
-  (println "predict-price") 
+  (println "predict-price => nop: " nop " cw: " cw " sw: " sw " pw: " pw " sig: " sig " comparator-fn: " (fn-name comparator-fn)) 
   (when-let [patterns (predict-pattern price-chart cw sw pw sig comparator-fn)]
     (let [last-price (double (last price-chart))
           sorted-patterns (sort-patterns-by-score patterns)
@@ -229,7 +240,7 @@
 
 (defn optimize-config
   "Tests different configurations and comparator functions, returns configs sorted by prediction accuracy."
-  [price-data {:keys [cw-range sw-range pw-range sig-range comparator-fns]} nop]
+  [price-data {:keys [cw-range sw-range pw-range sig-range comparator-fns tolerance]} nop]
   (let [configs (for [cw cw-range
                       sw sw-range
                       pw pw-range
@@ -238,11 +249,11 @@
                   {:cw cw :sw sw :pw pw :sig sig :comparator-name comp-name :comparator-fn comp-fn})
         evaluate-config (fn [config]
                           (try
-                            (let [window-size (:cw config)
-                                  [train test] (split-last-n window-size (double-array price-data))
+                            (let [test-size (:pw config)
+                                  [train test] (split-last-n test-size (double-array price-data))
                                   prediction-result (predict-price train nop (:cw config) (:sw config) (:pw config) (:sig config) (:comparator-fn config))]
                               (if (and prediction-result (:predictions prediction-result) (seq (:predictions prediction-result)))
-                                (let [evaluation (evaluate-predictions (:predictions prediction-result) test)]
+                                (let [evaluation (evaluate-predictions (:predictions prediction-result) test :tolerance (or tolerance 5.0))]
                                   (assoc config
                                          :score (:accuracy-pct evaluation)
                                          :mean-error (:mean-error evaluation)))

@@ -89,6 +89,133 @@
      :slider slider
      :get-value #(.getValue slider)}))
 
+;; Decimal slider component for tolerance (0.1 to 5.0 with 0.1 steps)
+(defn create-decimal-slider [label min-val max-val current-val step]
+  (let [scale (/ 1.0 step)
+        scaled-min (int (* min-val scale))
+        scaled-max (int (* max-val scale))
+        scaled-current (int (* current-val scale))
+        slider (doto (JSlider. scaled-min scaled-max scaled-current)
+                 (.setOrientation SwingConstants/HORIZONTAL)
+                 (.setPreferredSize (Dimension. 200 50))
+                 (.setPaintTicks true)
+                 (.setPaintLabels true)
+                 (.setMajorTickSpacing (max 1 (/ (- scaled-max scaled-min) 5))))
+        value-label (doto (JLabel. (format "%.1f" current-val))
+                      (.setPreferredSize (Dimension. 40 20))
+                      (.setHorizontalAlignment SwingConstants/CENTER))
+
+        ;; Create custom label table with decimal values
+        label-table (java.util.Hashtable.)
+        tick-spacing (.getMajorTickSpacing slider)
+        
+        ;; Add decimal labels at major tick positions
+        _ (doseq [tick-val (range scaled-min (inc scaled-max) tick-spacing)]
+            (let [decimal-val (/ tick-val scale)
+                  label (javax.swing.JLabel. (format "%.1f" decimal-val))]
+              (.put label-table (Integer. (int tick-val)) label)))
+
+        update-label (fn []
+                       (let [actual-val (/ (.getValue slider) scale)]
+                         (.setText value-label (format "%.1f" actual-val))))
+
+        listener (reify ChangeListener
+                   (stateChanged [_ _] (update-label)))]
+
+    ;; Set the custom label table
+    (.setLabelTable slider label-table)
+    (.addChangeListener slider listener)
+
+    {:panel (s/border-panel
+             :border (javax.swing.BorderFactory/createTitledBorder label)
+             :center (s/vertical-panel
+                      :items [(s/label :text " ")
+                              (s/horizontal-panel
+                               :items [(s/label :text "Value: ")
+                                       (s/config! value-label :preferred-size [50 :by 25])])
+                              (s/label :text " ")
+                              slider
+                              (s/label :text " ")]))
+     :slider slider
+     :get-value #(/ (.getValue slider) scale)}))
+
+;; Decimal range slider component for dual-handle min/max selection with decimal values
+(defn create-decimal-range-slider [label min-val max-val current-min current-max step]
+  (let [scale (/ 1.0 step)
+        scaled-min (int (* min-val scale))
+        scaled-max (int (* max-val scale))
+        scaled-current-min (int (* current-min scale))
+        scaled-current-max (int (* current-max scale))
+        
+        min-slider (doto (JSlider. scaled-min scaled-max scaled-current-min)
+                     (.setOrientation SwingConstants/HORIZONTAL)
+                     (.setPreferredSize (Dimension. 200 50))
+                     (.setPaintTicks true)
+                     (.setPaintLabels true)
+                     (.setMajorTickSpacing (max 1 (/ (- scaled-max scaled-min) 5))))
+        max-slider (doto (JSlider. scaled-min scaled-max scaled-current-max)
+                     (.setOrientation SwingConstants/HORIZONTAL)
+                     (.setPreferredSize (Dimension. 200 50))
+                     (.setPaintTicks true)
+                     (.setPaintLabels true)
+                     (.setMajorTickSpacing (max 1 (/ (- scaled-max scaled-min) 5))))
+        
+        min-label (doto (JLabel. (format "%.1f" current-min))
+                    (.setPreferredSize (Dimension. 40 20))
+                    (.setHorizontalAlignment SwingConstants/CENTER))
+        max-label (doto (JLabel. (format "%.1f" current-max))
+                    (.setPreferredSize (Dimension. 40 20))
+                    (.setHorizontalAlignment SwingConstants/CENTER))
+
+        ;; Create label tables for both sliders
+        label-table (java.util.Hashtable.)
+        tick-spacing (.getMajorTickSpacing min-slider)
+        _ (doseq [tick-val (range scaled-min (inc scaled-max) tick-spacing)]
+            (let [decimal-val (/ tick-val scale)
+                  label (javax.swing.JLabel. (format "%.1f" decimal-val))]
+              (.put label-table (Integer. (int tick-val)) label)))
+
+        ;; Ensure min <= max constraint
+        update-labels (fn []
+                        (let [min-val (.getValue min-slider)
+                              max-val (.getValue max-slider)]
+                          (when (> min-val max-val)
+                            (.setValue max-slider min-val))
+                          (when (< max-val min-val)
+                            (.setValue min-slider max-val))
+                          (.setText min-label (format "%.1f" (/ (.getValue min-slider) scale)))
+                          (.setText max-label (format "%.1f" (/ (.getValue max-slider) scale)))))
+
+        min-listener (reify ChangeListener
+                       (stateChanged [_ _] (update-labels)))
+        max-listener (reify ChangeListener
+                       (stateChanged [_ _] (update-labels)))]
+
+    (.setLabelTable min-slider label-table)
+    (.setLabelTable max-slider label-table)
+    (.addChangeListener min-slider min-listener)
+    (.addChangeListener max-slider max-listener)
+
+    {:panel (s/border-panel
+             :border (javax.swing.BorderFactory/createTitledBorder label)
+             :center (s/vertical-panel
+                      :items [(s/label :text " ")
+                              (s/horizontal-panel
+                               :items [(s/label :text "Min: ")
+                                       (s/config! min-label :preferred-size [50 :by 25])
+                                       (s/label :text "    Max: ")
+                                       (s/config! max-label :preferred-size [50 :by 25])])
+                              (s/label :text " ")
+                              (s/label :text "Min:")
+                              min-slider
+                              (s/label :text "Max:")
+                              max-slider
+                              (s/label :text " ")]))
+     :min-slider min-slider
+     :max-slider max-slider
+     :get-min-value #(/ (.getValue min-slider) scale)
+     :get-max-value #(/ (.getValue max-slider) scale)}))
+
 ;; Range slider component for dual-handle min/max selection
 (defn create-range-slider [label min-val max-val current-min current-max]
   (let [min-slider (doto (JSlider. min-val max-val current-min)
@@ -315,8 +442,9 @@
   (let [cw-slider (create-range-slider "Chunk Window Range" 3 30 5 10)
         sw-slider (create-range-slider "Skip Window Range" 3 30 5 10)
         pw-slider (create-single-slider "Predict Window" 5 500 50)
-        sig-slider (create-range-slider "Significance Range (x10)" 1 30 5 15)
-        nop-field-opt (s/text :text "3" :columns 3)
+        sig-slider (create-decimal-range-slider "Significance Range" 0.1 3.0 0.5 1.5 0.1)
+        tolerance-slider (create-decimal-slider "Tolerance %" 0.1 5.0 2.5 0.1) ; 0.1 to 5.0 with 0.1 steps
+        nop-slider-opt (create-single-slider "Number of Predictions" 1 10 3)
         comparator-checkboxes {"delta-avg" (s/checkbox :text "Delta Average" :selected? true)
                                "percentage-change" (s/checkbox :text "Percentage Change" :selected? true)
                                "log-returns" (s/checkbox :text "Log Returns" :selected? false)
@@ -328,23 +456,27 @@
      :sw-slider sw-slider
      :pw-slider pw-slider
      :sig-slider sig-slider
-     :nop-field-opt nop-field-opt
+     :tolerance-slider tolerance-slider
+     :nop-slider-opt nop-slider-opt
      :comparator-checkboxes comparator-checkboxes}))
 
 ;; Helper function to create configuration count calculator
 (defn create-config-count-calculator [cw-slider sw-slider pw-slider sig-slider comparator-checkboxes]
-  (let [config-count-label (s/label :text "Configurations to test: 0")
+  (let [config-count-label (s/label :text "Train on 0 combinations of configurations (Est. time: 0 sec)")
         update-config-count (fn []
                               (let [cw-count (inc (- ((:get-max-value cw-slider)) ((:get-min-value cw-slider))))
                                     sw-count (inc (- ((:get-max-value sw-slider)) ((:get-min-value sw-slider))))
                                     pw-count 1
-                                    sig-count (inc (- ((:get-max-value sig-slider)) ((:get-min-value sig-slider))))
+                                    ;; For decimal significance values, calculate number of steps
+                                    sig-min ((:get-min-value sig-slider))
+                                    sig-max ((:get-max-value sig-slider))
+                                    sig-step 0.1
+                                    sig-count (inc (int (/ (- sig-max sig-min) sig-step)))
                                     comparator-count (count (filter #(s/selection %) (vals comparator-checkboxes)))
                                     total-configs (* cw-count sw-count pw-count sig-count comparator-count)
                                     estimated-time (/ total-configs 50)]
                                 (s/text! config-count-label
-                                         (str "Configurations to test: " total-configs
-                                              " (Est. time: " (int estimated-time) "s)"))))]
+                                         (str "Train on " total-configs " combinations of configurations (Est. time: " (int estimated-time) " sec)"))))]
     
     ;; Add listeners to update count when sliders change
     (.addChangeListener (:min-slider cw-slider)
@@ -374,15 +506,16 @@
 
 ;; Helper function to run optimization in background
 (defn run-optimization-background [chart-panel dialog-components parameter-fields]
-  (let [{:keys [cw-slider sw-slider pw-slider sig-slider nop-field-opt comparator-checkboxes]} dialog-components
+  (let [{:keys [cw-slider sw-slider pw-slider sig-slider tolerance-slider nop-slider-opt comparator-checkboxes]} dialog-components
         cw-min ((:get-min-value cw-slider))
         cw-max ((:get-max-value cw-slider))
         sw-min ((:get-min-value sw-slider))
         sw-max ((:get-max-value sw-slider))
         pw-val ((:get-value pw-slider))
-        sig-min (/ ((:get-min-value sig-slider)) 10.0)
-        sig-max (/ ((:get-max-value sig-slider)) 10.0)
-        nop-val (Integer/parseInt (s/text nop-field-opt))
+        sig-min ((:get-min-value sig-slider))
+        sig-max ((:get-max-value sig-slider))
+        tolerance-val ((:get-value tolerance-slider)) ; Direct decimal value (0.1-5.0)
+        nop-val ((:get-value nop-slider-opt))
         selected-comparators (filter (fn [[_ v]] (s/selection v)) comparator-checkboxes)
         progress-dialog (create-progress-dialog nil "Optimization Running" "Testing parameter configurations...")]
     
@@ -411,7 +544,8 @@
                                                        :sw-range sw-range
                                                        :pw-range pw-range
                                                        :sig-range sig-range
-                                                       :comparator-fns selected-comp-fns}
+                                                       :comparator-fns selected-comp-fns
+                                                       :tolerance tolerance-val}
                                                       nop-val)]
             
             (javax.swing.SwingUtilities/invokeLater
@@ -480,71 +614,86 @@
 (defn create-optimize-fn [chart-panel parameter-fields ui-components]
   (let [{:keys [comparator-box]} ui-components]
     (fn [_]
-      (let [dialog-components (create-optimization-dialog-components)
-            {:keys [cw-slider sw-slider pw-slider sig-slider nop-field-opt comparator-checkboxes]} dialog-components
-            config-counter (create-config-count-calculator cw-slider sw-slider pw-slider sig-slider comparator-checkboxes)
-            
-            comparator-panel (s/border-panel
-                              :border (javax.swing.BorderFactory/createTitledBorder "Comparator Functions")
-                              :center (s/vertical-panel
-                                       :items [(s/label :text " ")
-                                               (s/horizontal-panel
-                                                :items [(get comparator-checkboxes "delta-avg")
-                                                        (s/label :text "  ")
-                                                        (get comparator-checkboxes "percentage-change")])
-                                               (s/horizontal-panel
-                                                :items [(get comparator-checkboxes "log-returns")
-                                                        (s/label :text "  ")
-                                                        (get comparator-checkboxes "price-differences")])
-                                               (s/horizontal-panel
-                                                :items [(get comparator-checkboxes "relative-percent-change")
-                                                        (s/label :text "  ")
-                                                        (get comparator-checkboxes "zero-anchoring")])
-                                               (s/label :text " ")]))
-            
-            dialog-content (s/vertical-panel
-                            :items [(s/label :text "Optimization Parameter Configuration")
-                                    (s/label :text "  ")
-                                    (s/horizontal-panel
-                                     :items [(:panel cw-slider)
-                                             (s/label :text "    ")
-                                             (:panel sw-slider)])
-                                    (s/label :text " ")
-                                    (s/horizontal-panel
-                                     :items [(:panel pw-slider)
-                                             (s/label :text "    ")
-                                             (:panel sig-slider)])
-                                    (s/label :text " ")
-                                    comparator-panel
-                                    (s/label :text " ")
-                                    (s/horizontal-panel
-                                     :items [(s/vertical-panel
-                                              :items [(s/label :text "Number of Predictions:")
-                                                      (s/label :text " ")
-                                                      nop-field-opt])
-                                             (s/label :text "    ")
-                                             (s/vertical-panel
-                                              :items [(s/label :text "Optimization Info:")
-                                                      (s/label :text " ")
-                                                      (:label config-counter)])])
-                                    (s/label :text "  ")
-                                    (s/label :text "Note: Larger ranges will take longer to optimize")])
-            
-            result (javax.swing.JOptionPane/showConfirmDialog
-                    nil
-                    (.getContentPane (doto (javax.swing.JFrame.)
-                                       (.add dialog-content)))
-                    "Optimization Configuration"
-                    javax.swing.JOptionPane/OK_CANCEL_OPTION
-                    javax.swing.JOptionPane/PLAIN_MESSAGE)]
+      ;; Check if end date is at least 30 days before today
+      (let [today (java.time.LocalDate/now)
+            thirty-days-ago (.minusDays today 30)
+            end-date-local (.toInstant @end-date)
+            end-date-local-date (.atZone end-date-local (java.time.ZoneId/systemDefault))
+            end-date-as-local-date (.toLocalDate end-date-local-date)]
+        (if (.isAfter end-date-as-local-date thirty-days-ago)
+          (s/alert "You can only train if you set the end date before 1 month from now because it needs data from the past to compare.")
+          (let [dialog-components (create-optimization-dialog-components)
+                {:keys [cw-slider sw-slider pw-slider sig-slider tolerance-slider nop-slider-opt comparator-checkboxes]} dialog-components
+                config-counter (create-config-count-calculator cw-slider sw-slider pw-slider sig-slider comparator-checkboxes)
+                
+                comparator-panel (s/border-panel
+                                  :border (javax.swing.BorderFactory/createTitledBorder "Comparator Functions")
+                                  :center (s/vertical-panel
+                                           :items [(s/label :text " ")
+                                                   (s/horizontal-panel
+                                                    :items [(get comparator-checkboxes "delta-avg")
+                                                            (s/label :text "  ")
+                                                            (get comparator-checkboxes "percentage-change")])
+                                                   (s/horizontal-panel
+                                                    :items [(get comparator-checkboxes "log-returns")
+                                                            (s/label :text "  ")
+                                                            (get comparator-checkboxes "price-differences")])
+                                                   (s/horizontal-panel
+                                                    :items [(get comparator-checkboxes "relative-percent-change")
+                                                            (s/label :text "  ")
+                                                            (get comparator-checkboxes "zero-anchoring")])
+                                                   (s/label :text " ")]))
+                
+                dialog-content (s/border-panel
+                                :border (javax.swing.BorderFactory/createTitledBorder "Optimization Parameter Configuration")
+                                :center (s/vertical-panel
+                                         :items [(s/label :text " ")
+                                                 (s/horizontal-panel
+                                                  :items [(:panel cw-slider)
+                                                          (s/label :text "    ")
+                                                          (:panel sw-slider)])
+                                                 (s/label :text " ")
+                                                 (s/horizontal-panel
+                                                  :items [(:panel pw-slider)
+                                                          (s/label :text "    ")
+                                                          (:panel sig-slider)])
+                                                 (s/label :text " ")
+                                                 (:panel tolerance-slider)
+                                                 (s/label :text " ")
+                                                 (:panel nop-slider-opt)
+                                                 (s/label :text " ")
+                                                 comparator-panel
+                                                 (s/label :text " ")
+                                                 (s/border-panel
+                                                  :border (javax.swing.BorderFactory/createTitledBorder "Optimization Info")
+                                                  :center (s/vertical-panel
+                                                           :items [(s/label :text " ")
+                                                                   (:label config-counter)
+                                                                   (s/label :text " ")
+                                                                   (s/label :text "Note: Larger ranges will take longer to optimize")
+                                                                   (s/label :text " ")]))
+                                                 (s/label :text " ")]))
+                
+                options (into-array String ["Start Training" "Cancel"])
+                result (javax.swing.JOptionPane/showOptionDialog
+                        nil
+                        (.getContentPane (doto (javax.swing.JFrame.)
+                                           (.add dialog-content)))
+                        "Optimization Configuration"
+                        javax.swing.JOptionPane/YES_NO_OPTION
+                        javax.swing.JOptionPane/PLAIN_MESSAGE
+                        nil
+                        options
+                        (first options))]
         
-        (when (= result javax.swing.JOptionPane/OK_OPTION)
+        (when (= result 0) ; 0 is the index of "Start Training" button
           (try
             (run-optimization-background chart-panel dialog-components parameter-fields)
             (catch NumberFormatException _
               (s/alert "Please enter valid numeric values for all ranges."))
             (catch Exception e
-              (s/alert (str "Optimization failed: " (.getMessage e))))))))))
+              (s/alert (str "Optimization failed: " (.getMessage e)))
+              (println "Optimization failed with exception: " e))))))))))
 
 (defn create-reset-fn [chart-panel parameter-fields ui-components]
   (let [{:keys [cw-field sw-field pw-field sig-field nop-field]} parameter-fields

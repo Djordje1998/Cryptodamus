@@ -10,12 +10,21 @@ This application analyzes historical cryptocurrency price patterns to identify s
 
 ### Core Pattern Recognition Process
 
-1. **Data Normalization**
-   - Zero anchoring: Subtracts first price from all prices in sequence
-   - Relative percent change: Calculates percentage changes relative to first element
-   - Delta average: Computes percentage deviation from sequence average
-   - Price differences: Element-wise differences between consecutive prices
-   - Log returns: Logarithmic returns for volatility analysis
+1. **Data Normalization (Comparator Functions)**
+   
+   The system supports multiple mathematical approaches for normalizing price data before pattern matching. Each comparator function transforms raw price sequences into comparable formats:
+
+   - **delta-avg**: Calculates percentage deviation from sequence average. Best for identifying patterns where prices oscillate around a mean value. Handles zero averages by using maximum absolute value as reference.
+   
+   - **percentage-change**: Computes period-over-period percentage changes between consecutive prices. Ideal for capturing momentum and trend patterns. Uses signed percentages to preserve directional information.
+   
+   - **log-returns**: Calculates logarithmic returns (ln(price[t]/price[t-1])). Preferred for volatility analysis and when dealing with exponential price movements. Mathematically stable for large price changes.
+   
+   - **price-differences**: Simple absolute differences between consecutive prices. Most intuitive approach, good for linear price movements and when actual price magnitudes matter.
+   
+   - **relative-percent-change**: Percentage changes relative to the first element in the sequence. Useful for analyzing cumulative performance from a baseline starting point.
+   
+   - **zero-anchoring**: Subtracts the first price from all prices in the sequence. Creates a zero-baseline view, emphasizing relative movements rather than absolute values.
 
 2. **Pattern Matching**
    - Chunk Window (CW): Size of historical patterns to compare
@@ -45,17 +54,21 @@ This application analyzes historical cryptocurrency price patterns to identify s
 - API key authentication through configuration file
 
 ### User Interface
-- JFreeChart-based price visualization
-- Calendar-based date selection
+- JFreeChart-based price visualization with interactive controls
+- Calendar-based date selection with validation
 - Real-time chart updates with multiple prediction trajectories
 - Optional overlay of actual future prices for validation
+- Slider-based parameter configuration for intuitive adjustment
+- Finding optimal parameters (training) for prediction, using historical data
 
 #### Parameters
-- **CW (Chunk Window)**: Size of historical price sequences to compare. Larger values capture longer-term patterns but require more data
-- **SW (Skip Window)**: Number of data points to advance when sliding through historical data. Smaller values provide more overlapping comparisons
-- **PW (Predict Window)**: Number of future price points to forecast. Limited by available historical outcomes
-- **Significance**: Maximum allowed statistical difference for pattern matches. Lower values require more similar patterns
-- **Number of Predictions**: How many top-ranked predictions to display, sorted by pattern match quality
+- **CW (Chunk Window)**: Size of historical price sequences to compare (3-30). Larger values capture longer-term patterns but require more data
+- **SW (Skip Window)**: Number of data points to advance when sliding through historical data (3-30). Smaller values provide more overlapping comparisons
+- **PW (Predict Window)**: Number of future price points to forecast (5-500). Limited by available historical outcomes
+- **Significance**: Maximum allowed statistical difference for pattern matches (0.1-3.0). Lower values require more similar patterns
+- **Number of Predictions**: How many top-ranked predictions to display (1-10), sorted by pattern match quality
+- **Tolerance**: Accuracy tolerance percentage for optimization (0.1-5.0%)
+- **Comparator Function**: Which mathematical normalization method to use (see Data Normalization section above)
 
 ### Technical Features
 - Automatic parameter optimization
@@ -83,9 +96,8 @@ This application analyzes historical cryptocurrency price patterns to identify s
 # Development
 lein run
 
-# Production build
-lein uberjar
-java -jar target/cryptodamus-*-standalone.jar
+# Run tests
+lein midje
 ```
 
 ## Usage
@@ -96,8 +108,9 @@ java -jar target/cryptodamus-*-standalone.jar
    - CW (Chunk Window): Pattern size
    - SW (Skip Window): Step size
    - PW (Predict Window): Future points
-   - Significance: Similarity threshold
-   - Number of Predictions: Output count
+   - Significance (Sig): Similarity threshold
+   - Number of Predictions (NoP): Output count
+   - Comparator Function: Select normalization method
 4. Generate predictions or use automatic optimization
 
 ### Chart Interpretation
